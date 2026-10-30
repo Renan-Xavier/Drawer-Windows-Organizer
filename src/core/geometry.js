@@ -238,10 +238,108 @@
     };
   }
 
+  /**
+   * Computes full layout, preview items, connected panel bounds, and hit-test bounding box
+   * for a single drawer instance.
+   */
+  function computeDrawerLayout(
+    drawer,
+    {
+      isOpen = false,
+      isPinned = false,
+      scale = 'medium',
+      screenWidth = 1920,
+      screenHeight = 1080,
+    } = {}
+  ) {
+    const metrics = getScaleMetrics(scale);
+    const items = Array.isArray(drawer.items) ? drawer.items : [];
+    const previewItems = items.slice(0, 4);
+
+    const direction = computeOpenDirection({
+      x: drawer.x,
+      y: drawer.y,
+      iconCount: items.length,
+      scale,
+      screenWidth,
+      screenHeight,
+      preferredDirection: drawer.preferredDirection || 'auto',
+    });
+
+    const grid = computeDrawerGrid(items.length, direction, scale);
+    const labelExtraWidth = 20;
+    const labelHeight = 28;
+    const connectorOverlap = 6;
+
+    const baseRect = {
+      x: drawer.x - labelExtraWidth / 2,
+      y: drawer.y,
+      width: metrics.drawerSize + labelExtraWidth,
+      height: metrics.drawerSize + labelHeight,
+    };
+
+    let panelRect;
+    if (direction === 'right') {
+      panelRect = {
+        x: drawer.x + metrics.drawerSize - connectorOverlap,
+        y: drawer.y,
+        width: grid.width + connectorOverlap,
+        height: Math.max(metrics.drawerSize, grid.height),
+      };
+    } else if (direction === 'left') {
+      panelRect = {
+        x: drawer.x - grid.width,
+        y: drawer.y,
+        width: grid.width + connectorOverlap,
+        height: Math.max(metrics.drawerSize, grid.height),
+      };
+    } else {
+      // 'down'
+      panelRect = {
+        x: drawer.x,
+        y: drawer.y + metrics.drawerSize - connectorOverlap,
+        width: Math.max(metrics.drawerSize, grid.width),
+        height: grid.height + connectorOverlap,
+      };
+    }
+
+    let interactiveRect = { ...baseRect };
+    if (isOpen) {
+      const minX = Math.min(baseRect.x, panelRect.x);
+      const minY = Math.min(baseRect.y, panelRect.y);
+      const maxX = Math.max(
+        baseRect.x + baseRect.width,
+        panelRect.x + panelRect.width
+      );
+      const maxY = Math.max(
+        baseRect.y + baseRect.height,
+        panelRect.y + panelRect.height
+      );
+      interactiveRect = {
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY,
+      };
+    }
+
+    return {
+      metrics,
+      previewItems,
+      direction,
+      grid,
+      panelRect,
+      interactiveRect,
+      isOpen,
+      isPinned,
+    };
+  }
+
   return {
     getScaleMetrics,
     computeDrawerGrid,
     computeOpenDirection,
     createInteractionMachine,
+    computeDrawerLayout,
   };
 });

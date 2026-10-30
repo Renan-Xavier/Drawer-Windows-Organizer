@@ -1,0 +1,545 @@
+:root {
+  --blue-primary: #2563eb;
+  --blue-deep: #1d4ed8;
+  --blue-panel-bg: rgba(23, 49, 122, 0.92);
+  --blue-handle-bg: linear-gradient(145deg, #2563eb 0%, #1d4ed8 100%);
+  --blue-border: rgba(147, 197, 253, 0.48);
+  --blue-border-strong: rgba(191, 219, 254, 0.85);
+  --blue-glow: rgba(37, 99, 235, 0.45);
+  --text-light: #f8fafc;
+  --text-muted: #bfdbfe;
+  --transition-smooth: 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  color: var(--text-light);
+}
+
+.desktop-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Unidade da Gaveta (Handle + Gaveta Expansível Contínua)
+   ========================================================================== */
+.drawer-unit {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 10;
+  transition: z-index 0ms;
+}
+
+.drawer-unit.is-open {
+  z-index: 40;
+}
+
+.drawer-unit.is-dragging {
+  z-index: 100;
+  opacity: 0.92;
+}
+
+/* Botão Principal da Gaveta (Quadrado Azul Arredondado Estilo Discord) */
+.drawer-handle {
+  position: relative;
+  width: var(--drawer-size, 64px);
+  height: var(--drawer-size, 64px);
+  border-radius: var(--drawer-radius, 16px);
+  background: var(--blue-handle-bg);
+  border: 1.5px solid var(--blue-border);
+  box-shadow:
+    0 8px 20px rgba(15, 23, 42, 0.42),
+    inset 0 1px 1px rgba(255, 255, 255, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  transition:
+    transform var(--transition-smooth),
+    border-radius var(--transition-smooth),
+    border-color var(--transition-smooth),
+    box-shadow var(--transition-smooth),
+    background var(--transition-smooth);
+}
+
+.drawer-handle:hover {
+  border-color: var(--blue-border-strong);
+  box-shadow:
+    0 10px 24px rgba(29, 78, 216, 0.52),
+    inset 0 1px 2px rgba(255, 255, 255, 0.35);
+}
+
+.drawer-unit.is-pinned .drawer-handle {
+  border-color: #93c5fd;
+  box-shadow:
+    0 0 0 2px rgba(96, 165, 250, 0.45),
+    0 10px 26px rgba(29, 78, 216, 0.6);
+}
+
+.drawer-unit.drag-target .drawer-handle,
+.drawer-unit.drag-target .drawer-panel {
+  border-color: #ffffff;
+  box-shadow:
+    0 0 0 3px rgba(147, 197, 253, 0.8),
+    0 12px 28px rgba(37, 99, 235, 0.7);
+}
+
+/* Conexão visual contínua (como uma gaveta única abrindo) */
+.drawer-unit.is-open.dir-right .drawer-handle {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.drawer-unit.is-open.dir-left .drawer-handle {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.drawer-unit.is-open.dir-down .drawer-handle {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* Grade 2x2 de Prévia Interna (Estilo Pasta do Discord) */
+.drawer-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 4px;
+  width: 72%;
+  height: 72%;
+  padding: 2px;
+}
+
+.preview-slot {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: rgba(191, 219, 254, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.preview-slot img {
+  width: var(--preview-icon-size, 22px);
+  height: var(--preview-icon-size, 22px);
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+.preview-fallback-glyph {
+  font-size: 11px;
+  font-weight: 700;
+  color: #dbeafe;
+}
+
+/* Indicador discreto de Gaveta Fixada (Pin) */
+.pin-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #60a5fa;
+  border: 2px solid #1e3a8a;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity var(--transition-smooth),
+    transform var(--transition-smooth);
+  pointer-events: none;
+}
+
+.drawer-unit.is-pinned .pin-badge {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ==========================================================================
+   Nome da Gaveta (Editável / Classificável)
+   ========================================================================== */
+.drawer-label-wrap {
+  margin-top: 5px;
+  max-width: calc(var(--drawer-size, 64px) + 36px);
+  min-width: var(--drawer-size, 64px);
+  text-align: center;
+  z-index: 4;
+}
+
+.drawer-label {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #ffffff;
+  background: rgba(15, 23, 42, 0.58);
+  border: 1px solid rgba(147, 197, 253, 0.22);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.drawer-label:hover {
+  background: rgba(30, 58, 138, 0.82);
+  border-color: rgba(147, 197, 253, 0.55);
+}
+
+.drawer-label-input {
+  width: 110px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1.5px solid #93c5fd;
+  background: rgba(15, 23, 42, 0.95);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+}
+
+/* ==========================================================================
+   Painel Geométrico Expansível (Quadrado/Retângulo Autoajustável)
+   ========================================================================== */
+.drawer-panel {
+  position: absolute;
+  background: var(--blue-panel-bg);
+  border: 1.5px solid var(--blue-border);
+  border-radius: var(--drawer-radius, 16px);
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.52),
+    inset 0 1px 1px rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  padding: var(--panel-padding, 10px);
+  width: var(--panel-width, 94px);
+  height: var(--panel-height, 102px);
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+  transition:
+    width var(--transition-smooth),
+    height var(--transition-smooth),
+    opacity var(--transition-smooth),
+    transform var(--transition-smooth),
+    border-radius var(--transition-smooth);
+}
+
+/* Direção: DIREITA (padrão quando à esquerda/centro) */
+.drawer-unit.dir-right .drawer-panel {
+  left: calc(var(--drawer-size, 64px) - 3px);
+  top: 0;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+  transform-origin: left center;
+  transform: translate3d(-14px, 0, 0) scaleX(0.82);
+}
+
+/* Direção: ESQUERDA (quando próximo da borda direita) */
+.drawer-unit.dir-left .drawer-panel {
+  right: calc(var(--drawer-size, 64px) - 3px);
+  top: 0;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  transform-origin: right center;
+  transform: translate3d(14px, 0, 0) scaleX(0.82);
+}
+
+/* Direção: BAIXO */
+.drawer-unit.dir-down .drawer-panel {
+  top: calc(var(--drawer-size, 64px) - 3px);
+  left: 0;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  transform-origin: top center;
+  transform: translate3d(0, -14px, 0) scaleY(0.82);
+}
+
+/* Estado Aberto: Fade + Deslize Suaves */
+.drawer-unit.is-open .drawer-panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+/* Grade de Ícones Interna */
+.drawer-items-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols, 1), var(--cell-width, 74px));
+  grid-template-rows: repeat(var(--grid-rows, 1), var(--cell-height, 82px));
+  gap: var(--grid-gap, 8px);
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-items: center;
+}
+
+.drawer-item {
+  width: var(--cell-width, 74px);
+  height: var(--cell-height, 82px);
+  border-radius: 10px;
+  padding: 5px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    border-color 160ms ease;
+}
+
+.drawer-item:hover {
+  background: rgba(96, 165, 250, 0.24);
+  border-color: rgba(191, 219, 254, 0.45);
+  transform: translateY(-2px);
+}
+
+.drawer-item:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.drawer-item-icon {
+  width: var(--icon-size, 48px);
+  height: var(--icon-size, 48px);
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+.drawer-item-fallback {
+  width: var(--icon-size, 48px);
+  height: var(--icon-size, 48px);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.drawer-item-name {
+  width: 100%;
+  font-size: 11px;
+  font-weight: 500;
+  color: #eff6ff;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* Slot vazio quando a gaveta ainda não tem ícones */
+.drawer-empty-slot {
+  width: var(--cell-width, 74px);
+  height: var(--cell-height, 82px);
+  border-radius: 10px;
+  border: 1.5px dashed rgba(191, 219, 254, 0.48);
+  background: rgba(30, 64, 175, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  padding: 4px;
+  text-align: center;
+  color: var(--text-muted);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.drawer-empty-slot:hover {
+  background: rgba(59, 130, 246, 0.35);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.empty-plus {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.empty-hint {
+  font-size: 9.5px;
+  line-height: 1.15;
+}
+
+/* ==========================================================================
+   Barra Flutuante Discreta (Quick Pill) & Menu de Contexto
+   ========================================================================== */
+.quick-pill {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.84);
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  z-index: 200;
+  pointer-events: auto;
+}
+
+.quick-pill-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
+}
+
+.brand-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: 0.3px;
+}
+
+.pill-btn {
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.pill-btn:hover {
+  filter: brightness(1.12);
+}
+
+.pill-btn:active {
+  transform: scale(0.97);
+}
+
+.pill-select {
+  background: rgba(30, 41, 59, 0.9);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+}
+
+.context-menu {
+  position: fixed;
+  min-width: 195px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  z-index: 500;
+  pointer-events: auto;
+}
+
+.context-menu.hidden {
+  display: none;
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: #f1f5f9;
+  font-size: 12px;
+  text-align: left;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ctx-item:hover {
+  background: rgba(37, 99, 235, 0.45);
+}
+
+.ctx-item.danger {
+  color: #fca5a5;
+}
+
+.ctx-item.danger:hover {
+  background: rgba(220, 38, 38, 0.35);
+}
+
+.ctx-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  color: #f8fafc;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+  z-index: 600;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.toast.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}

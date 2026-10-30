@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Drawer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- Camada principal das Gavetas na Área de Trabalho -->
+    <div id="desktop-canvas" class="desktop-canvas"></div>
+
+    <!-- Barra flutuante discreta de controle rápido -->
+    <div id="quick-pill" class="quick-pill interactive-surface" title="Controles rápidos do Drawer">
+      <div class="quick-pill-brand">
+        <span class="brand-dot"></span>
+        <span class="brand-title">Drawer</span>
+      </div>
+      <button id="btn-new-drawer" class="pill-btn primary" type="button">
+        + Nova Gaveta
+      </button>
+      <select id="select-scale" class="pill-select" title="Tamanho dos ícones (Sincronizado com o Windows)">
+        <option value="auto">Tam: Windows (Auto)</option>
+        <option value="small">Tam: Pequeno</option>
+        <option value="medium">Tam: Médio</option>
+        <option value="large">Tam: Grande</option>
+      </select>
+    </div>
+
+    <!-- Menu de Contexto Personalizado -->
+    <div id="context-menu" class="context-menu interactive-surface hidden"></div>
+
+    <!-- Toast de Notificação -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="../core/geometry.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
