@@ -1,0 +1,53 @@
+{
+  "name": "drawer",
+  "productName": "Drawer",
+  "version": "1.0.0",
+  "description": "Organizador de ícones estilo gavetas (inspirado no Discord) para a Área de Trabalho do Windows",
+  "main": "src/main/main.js",
+  "author": "Drawer Desktop",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "icons": "node src/main/icon-generator.js",
+    "dist": "npm run icons && electron-builder --win --x64",
+    "pack": "npm run icons && electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.drawer.desktop.organizer",
+    "productName": "Drawer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Drawer",
+      "runAfterFinish": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}
