@@ -37,16 +37,14 @@ body {
 }
 
 /* ==========================================================================
-   Unidade da Gaveta (Handle + Gaveta Expansível Contínua)
+   Unidade da Gaveta (Dimensões exatas do quadrado da gaveta)
    ========================================================================== */
 .drawer-unit {
   position: absolute;
+  width: var(--drawer-size, 64px);
+  height: var(--drawer-size, 64px);
   pointer-events: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   z-index: 10;
-  transition: z-index 0ms;
 }
 
 .drawer-unit.is-open {
@@ -61,8 +59,8 @@ body {
 /* Botão Principal da Gaveta (Quadrado Azul Arredondado Estilo Discord) */
 .drawer-handle {
   position: relative;
-  width: var(--drawer-size, 64px);
-  height: var(--drawer-size, 64px);
+  width: 100%;
+  height: 100%;
   border-radius: var(--drawer-radius, 16px);
   background: var(--blue-handle-bg);
   border: 1.5px solid var(--blue-border);
@@ -102,22 +100,6 @@ body {
   box-shadow:
     0 0 0 3px rgba(147, 197, 253, 0.8),
     0 12px 28px rgba(37, 99, 235, 0.7);
-}
-
-/* Conexão visual contínua (como uma gaveta única abrindo) */
-.drawer-unit.is-open.dir-right .drawer-handle {
-  border-top-right-radius: 6px;
-  border-bottom-right-radius: 6px;
-}
-
-.drawer-unit.is-open.dir-left .drawer-handle {
-  border-top-left-radius: 6px;
-  border-bottom-left-radius: 6px;
-}
-
-.drawer-unit.is-open.dir-down .drawer-handle {
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
 }
 
 /* Grade 2x2 de Prévia Interna (Estilo Pasta do Discord) */
@@ -180,12 +162,14 @@ body {
 }
 
 /* ==========================================================================
-   Nome da Gaveta (Editável / Classificável)
+   Nome da Gaveta (Posicionado de forma absoluta abaixo do handle, sem deslocar o painel)
    ========================================================================== */
 .drawer-label-wrap {
-  margin-top: 5px;
-  max-width: calc(var(--drawer-size, 64px) + 36px);
-  min-width: var(--drawer-size, 64px);
+  position: absolute;
+  top: calc(var(--drawer-size, 64px) + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(var(--drawer-size, 64px) + 12px);
   text-align: center;
   z-index: 4;
 }
@@ -193,35 +177,35 @@ body {
 .drawer-label {
   display: inline-block;
   max-width: 100%;
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   line-height: 1.25;
   color: #ffffff;
-  background: rgba(15, 23, 42, 0.58);
+  background: rgba(15, 23, 42, 0.62);
   border: 1px solid rgba(147, 197, 253, 0.22);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: text;
+  cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }
 
 .drawer-label:hover {
-  background: rgba(30, 58, 138, 0.82);
+  background: rgba(30, 58, 138, 0.85);
   border-color: rgba(147, 197, 253, 0.55);
 }
 
 .drawer-label-input {
-  width: 110px;
+  width: 105px;
   padding: 2px 6px;
   border-radius: 6px;
   border: 1.5px solid #93c5fd;
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(15, 23, 42, 0.96);
   color: #ffffff;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   text-align: center;
   outline: none;
@@ -229,6 +213,7 @@ body {
 
 /* ==========================================================================
    Painel Geométrico Expansível (Quadrado/Retângulo Autoajustável)
+   Nunca passa por baixo do botão ou do nome da gaveta!
    ========================================================================== */
 .drawer-panel {
   position: absolute;
@@ -245,50 +230,43 @@ body {
   opacity: 0;
   pointer-events: none;
   overflow: hidden;
-  z-index: 2;
+  z-index: 5;
   transition:
     width var(--transition-smooth),
     height var(--transition-smooth),
     opacity var(--transition-smooth),
-    transform var(--transition-smooth),
-    border-radius var(--transition-smooth);
+    transform var(--transition-smooth);
 }
 
-/* Direção: DIREITA (padrão quando à esquerda/centro) */
+/* Direção: DIREITA (sempre a +8px da borda direita do botão da gaveta) */
 .drawer-unit.dir-right .drawer-panel {
-  left: calc(var(--drawer-size, 64px) - 3px);
+  left: calc(var(--drawer-size, 64px) + 8px);
   top: 0;
-  border-top-left-radius: 6px;
-  border-bottom-left-radius: 6px;
-  transform-origin: left center;
-  transform: translate3d(-14px, 0, 0) scaleX(0.82);
+  transform-origin: left top;
+  transform: scale(0.92);
 }
 
-/* Direção: ESQUERDA (quando próximo da borda direita) */
+/* Direção: ESQUERDA (sempre a +8px da borda esquerda do botão da gaveta) */
 .drawer-unit.dir-left .drawer-panel {
-  right: calc(var(--drawer-size, 64px) - 3px);
+  right: calc(var(--drawer-size, 64px) + 8px);
   top: 0;
-  border-top-right-radius: 6px;
-  border-bottom-right-radius: 6px;
-  transform-origin: right center;
-  transform: translate3d(14px, 0, 0) scaleX(0.82);
+  transform-origin: right top;
+  transform: scale(0.92);
 }
 
-/* Direção: BAIXO */
+/* Direção: BAIXO (sempre abaixo do nome da gaveta) */
 .drawer-unit.dir-down .drawer-panel {
-  top: calc(var(--drawer-size, 64px) - 3px);
+  top: calc(var(--drawer-size, 64px) + 30px);
   left: 0;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-  transform-origin: top center;
-  transform: translate3d(0, -14px, 0) scaleY(0.82);
+  transform-origin: top left;
+  transform: scale(0.92);
 }
 
-/* Estado Aberto: Fade + Deslize Suaves */
+/* Estado Aberto: Fade + Expansão Suaves */
 .drawer-unit.is-open .drawer-panel {
   opacity: 1;
   pointer-events: auto;
-  transform: translate3d(0, 0, 0) scale(1);
+  transform: scale(1);
 }
 
 /* Grade de Ícones Interna */
@@ -401,81 +379,11 @@ body {
 }
 
 /* ==========================================================================
-   Barra Flutuante Discreta (Quick Pill) & Menu de Contexto
+   Menu de Contexto & Toast
    ========================================================================== */
-.quick-pill {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.84);
-  border: 1px solid rgba(96, 165, 250, 0.42);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px);
-  z-index: 200;
-  pointer-events: auto;
-}
-
-.quick-pill-brand {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 4px;
-}
-
-.brand-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: linear-gradient(135deg, #60a5fa, #2563eb);
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.8);
-}
-
-.brand-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #e2e8f0;
-  letter-spacing: 0.3px;
-}
-
-.pill-btn {
-  border: 1px solid rgba(147, 197, 253, 0.45);
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  color: #ffffff;
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: filter 150ms ease, transform 150ms ease;
-}
-
-.pill-btn:hover {
-  filter: brightness(1.12);
-}
-
-.pill-btn:active {
-  transform: scale(0.97);
-}
-
-.pill-select {
-  background: rgba(30, 41, 59, 0.9);
-  color: #e2e8f0;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 11px;
-  outline: none;
-  cursor: pointer;
-}
-
 .context-menu {
   position: fixed;
-  min-width: 195px;
+  min-width: 200px;
   background: rgba(15, 23, 42, 0.96);
   border: 1px solid rgba(96, 165, 250, 0.45);
   border-radius: 12px;

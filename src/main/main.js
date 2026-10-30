@@ -11,21 +11,70 @@ const {
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
 
 const {
   createDrawerStore,
   parseWindowsRegistryIconSize,
 } = require('../core/store');
+const {
+  parseUrlShortcutFile,
+  getWin32HelperPath,
+  extractWindowsIconDataUrl,
+} = require('../core/icon-resolver');
 const { ensureAppIcons } = require('./icon-generator');
 
 let mainWindow = null;
+let settingsWindow = null;
 let tray = null;
 let store = null;
+let appIconPath = null;
 let interactiveRects = [];
 let forceInteractive = false;
 let isCurrentlyIgnoringMouse = null;
 let hitTestInterval = null;
+let keepBottomCounter = 0;
+
+function getWindowHwndDecimal(win) {
+  if (!win || win.isDestroyed()) return null;
+  try {
+    const buf = win.getNativeWindowHandle();
+    if (buf.length >= 8) {
+      return buf.readBigUInt64LE(0).toString();
+    }
+    return buf.readUInt32LE(0).toString();
+  } catch {
+    return null;
+  }
+}
+
+function pinWindowToDesktopBottom(win) {
+  if (process.platform !== 'win32') return;
+  const hwndStr = getWindowHwndDecimal(win);
+  const helperExe = getWin32HelperPath();
+  if (!hwndStr || !fs.existsSync(helperExe)) return;
+  try {
+    execFileSync(helperExe, ['pin-to-desktop', hwndStr], {
+      windowsHide: true,
+      timeout: 1500,
+    });
+  } catch {
+    // ignore
+  }
+}
+
+function keepWindowAtDesktopBottomAsync(win) {
+  if (process.platform !== 'win32') return;
+  const hwndStr = getWindowHwndDecimal(win);
+  const helperExe = getWin32HelperPath();
+  if (!hwndStr || !fs.existsSync(helperExe)) return;
+  execFile(
+    helperExe,
+    ['keep-bottom', hwndStr],
+    { windowsHide: true, timeout: 1000 },
+    () => {}
+  );
+}
 
 function readWindowsDesktopIconScale() {
   if (process.platform !== 'win32') return 'medium';
@@ -67,35 +116,36 @@ function getEffectivePayload() {
 }
 
 function broadcastState() {
+  const payload = getEffectivePayload();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('drawer:state-updated', getEffectivePayload());
+    mainWindow.webContents.send('drawer:state-updated', payload);
+  }
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send('drawer:state-updated', payload);
   }
   updateTrayMenu();
 }
 
 async function extractFileIconDataUrl(filePath) {
-  try {
-    let iconTarget = filePath;
-    if (
-      process.platform === 'win32' &&
-      filePath.toLowerCase().endsWith('.lnk')
-    ) {
-      try {
-        const shortcut = shell.readShortcutLink(filePath);
-        if (shortcut && shortcut.icon && fs.existsSync(shortcut.icon)) {
-          iconTarget = shortcut.icon;
-        } else if (
-          shortcut &&
-          shortcut.target &&
-          fs.existsSync(shortcut.target)
-        ) {
-          iconTarget = shortcut.target;
-        }
-      } catch {
-        // Fallback to .lnk itself
-      }
+  if (!filePath) return '';
+
+  // 1. Primary: Native Windows Shell IShellItemImageFactory + .url IconFile + .lnk resolver
+  const shortcutReader = (lnkPath) => {
+    try {
+      return shell.readShortcutLink(lnkPath);
+    } catch {
+      return null;
     }
-    const img = await app.getFileIcon(iconTarget, { size: 'large' });
+  };
+
+  const highResDataUrl = extractWindowsIconDataUrl(filePath, shortcutReader);
+  if (highResDataUrl) {
+    return highResDataUrl;
+  }
+
+  // 2. Fallback: Electron's app.getFileIcon
+  try {
+    const img = await app.getFileIcon(filePath, { size: 'large' });
     if (img && !img.isEmpty()) {
       return img.toDataURL();
     }
@@ -105,11 +155,40 @@ async function extractFileIconDataUrl(filePath) {
   return '';
 }
 
+async function refreshAllExistingIcons() {
+  if (!store) return;
+  const current = store.getState();
+  let changed = false;
+
+  for (const drawer of current.drawers || []) {
+    for (const item of drawer.items || []) {
+      const target = item.targetPath || item.originalDesktopPath;
+      if (target && fs.existsSync(target)) {
+        const freshIcon = await extractFileIconDataUrl(target);
+        if (freshIcon && freshIcon !== item.iconDataUrl) {
+          item.iconDataUrl = freshIcon;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (changed) {
+    store.save();
+    broadcastState();
+  }
+}
+
 function setupHitTestLoop() {
   if (hitTestInterval) clearInterval(hitTestInterval);
 
   hitTestInterval = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    keepBottomCounter = (keepBottomCounter + 1) % 45;
+    if (keepBottomCounter === 0) {
+      keepWindowAtDesktopBottomAsync(mainWindow);
+    }
 
     if (forceInteractive) {
       if (isCurrentlyIgnoringMouse !== false) {
@@ -124,8 +203,6 @@ function setupHitTestLoop() {
     const localX = cursor.x - bounds.x;
     const localY = cursor.y - bounds.y;
 
-    // Expand hit zone by 14px around each drawer so OLE Drag & Drop and hover
-    // activate cleanly as the cursor approaches any drawer.
     const pad = 14;
     const hit = interactiveRects.some(
       (r) =>
@@ -158,13 +235,14 @@ function createOverlayWindow(iconPath) {
     height,
     frame: false,
     transparent: true,
-    resizable: false,
-    movable: false,
+    thickFrame: false,
+    roundedCorners: false,
+    hasShadow: false,
+    focusable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    hasShadow: false,
     icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -177,6 +255,7 @@ function createOverlayWindow(iconPath) {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
+    pinWindowToDesktopBottom(mainWindow);
     if (process.env.DRAWER_SMOKE_TEST === '1') {
       setTimeout(() => {
         app.quit();
@@ -184,14 +263,61 @@ function createOverlayWindow(iconPath) {
     }
   });
 
+  mainWindow.on('show', () => {
+    pinWindowToDesktopBottom(mainWindow);
+  });
+
+  mainWindow.on('focus', () => {
+    keepWindowAtDesktopBottomAsync(mainWindow);
+  });
+
   screen.on('display-metrics-changed', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const updated = screen.getPrimaryDisplay().workArea;
     mainWindow.setBounds(updated);
+    pinWindowToDesktopBottom(mainWindow);
     broadcastState();
   });
 
   setupHitTestLoop();
+}
+
+function openSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 540,
+    height: 540,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    title: 'Configurações do Drawer',
+    backgroundColor: '#0f172a',
+    icon: appIconPath,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  settingsWindow.setMenuBarVisibility(false);
+  settingsWindow.loadFile(
+    path.join(__dirname, '..', 'renderer', 'settings.html')
+  );
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      pinWindowToDesktopBottom(mainWindow);
+    }
+  });
 }
 
 function updateTrayMenu() {
@@ -206,6 +332,12 @@ function updateTrayMenu() {
       enabled: false,
     },
     { type: 'separator' },
+    {
+      label: 'Configurar Gavetas...',
+      click: () => {
+        openSettingsWindow();
+      },
+    },
     {
       label: '+ Nova Gaveta',
       click: () => {
@@ -295,13 +427,13 @@ function registerIpcHandlers() {
       y: payload.y ?? Math.min(800, 60 + count * 120),
       preferredDirection: payload.preferredDirection || 'auto',
     });
-    const next = getEffectivePayload();
-    updateTrayMenu();
-    return next;
+    broadcastState();
+    return getEffectivePayload();
   });
 
   ipcMain.handle('drawer:rename', (_event, { drawerId, name }) => {
     store.renameDrawer(drawerId, name);
+    broadcastState();
     return getEffectivePayload();
   });
 
@@ -315,6 +447,7 @@ function registerIpcHandlers() {
       display.workAreaSize.width,
       display.workAreaSize.height
     );
+    broadcastState();
     return getEffectivePayload();
   });
 
@@ -322,13 +455,14 @@ function registerIpcHandlers() {
     'drawer:set-direction',
     (_event, { drawerId, preferredDirection }) => {
       store.setDrawerDirection(drawerId, preferredDirection);
+      broadcastState();
       return getEffectivePayload();
     }
   );
 
   ipcMain.handle('drawer:delete', (_event, { drawerId }) => {
     store.deleteDrawer(drawerId);
-    updateTrayMenu();
+    broadcastState();
     return getEffectivePayload();
   });
 
@@ -343,6 +477,7 @@ function registerIpcHandlers() {
         });
       }
     }
+    broadcastState();
     return getEffectivePayload();
   });
 
@@ -352,7 +487,7 @@ function registerIpcHandlers() {
       mainWindow.setIgnoreMouseEvents(false);
     }
     try {
-      const result = await dialog.showOpenDialog(mainWindow, {
+      const result = await dialog.showOpenDialog({
         title: 'Adicionar ícones/atalhos à Gaveta',
         defaultPath: app.getPath('desktop'),
         properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
@@ -368,17 +503,23 @@ function registerIpcHandlers() {
       }
     } finally {
       forceInteractive = false;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        pinWindowToDesktopBottom(mainWindow);
+      }
     }
+    broadcastState();
     return getEffectivePayload();
   });
 
   ipcMain.handle('drawer:remove-item', (_event, { drawerId, itemId }) => {
     store.removeItemFromDrawer(drawerId, itemId);
+    broadcastState();
     return getEffectivePayload();
   });
 
   ipcMain.handle('drawer:rename-item', (_event, { drawerId, itemId, name }) => {
     store.renameItemInDrawer(drawerId, itemId, name);
+    broadcastState();
     return getEffectivePayload();
   });
 
@@ -386,18 +527,42 @@ function registerIpcHandlers() {
     if (!targetPath || !fs.existsSync(targetPath)) {
       return { ok: false, error: 'Arquivo ou atalho não encontrado.' };
     }
+    if (targetPath.toLowerCase().endsWith('.url')) {
+      try {
+        const content = fs.readFileSync(targetPath, 'utf8');
+        const parsed = parseUrlShortcutFile(content);
+        if (parsed.url) {
+          await shell.openExternal(parsed.url);
+          return { ok: true, error: null };
+        }
+      } catch {
+        // Fallback to shell.openPath
+      }
+    }
     const errMessage = await shell.openPath(targetPath);
     return { ok: !errMessage, error: errMessage || null };
   });
 
   ipcMain.handle('drawer:update-settings', (_event, partialSettings) => {
     store.setSettings(partialSettings);
-    updateTrayMenu();
+    broadcastState();
     return getEffectivePayload();
   });
 
   ipcMain.handle('drawer:refresh-win-scale', () => {
     return getEffectivePayload();
+  });
+
+  ipcMain.handle('drawer:open-settings', () => {
+    openSettingsWindow();
+    return { ok: true };
+  });
+
+  ipcMain.handle('drawer:close-settings', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.close();
+    }
+    return { ok: true };
   });
 
   ipcMain.on('drawer:set-interactive-rects', (_event, rects) => {
@@ -421,9 +586,10 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     const assetsDir = path.join(app.getPath('userData'), 'icons');
     const { pngPath, icoPath } = ensureAppIcons(assetsDir);
+    appIconPath = process.platform === 'win32' ? icoPath : pngPath;
 
     store = createDrawerStore({
       storageDir: app.getPath('userData'),
@@ -432,14 +598,18 @@ if (!gotTheLock) {
     store.load();
 
     registerIpcHandlers();
-    createOverlayWindow(process.platform === 'win32' ? icoPath : pngPath);
+    createOverlayWindow(appIconPath);
 
     const trayImg = nativeImage
       .createFromPath(pngPath)
       .resize({ width: 16, height: 16 });
     tray = new Tray(trayImg);
     tray.setToolTip('Drawer — Organizador de Ícones');
+    tray.on('double-click', () => openSettingsWindow());
     updateTrayMenu();
+
+    // Atualiza automaticamente os ícones já salvos (ex.: atalhos .url da Steam)
+    await refreshAllExistingIcons();
   });
 
   app.on('before-quit', () => {

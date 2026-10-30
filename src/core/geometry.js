@@ -269,7 +269,7 @@
     const grid = computeDrawerGrid(items.length, direction, scale);
     const labelExtraWidth = 20;
     const labelHeight = 28;
-    const connectorOverlap = 6;
+    const panelGap = 8;
 
     const baseRect = {
       x: drawer.x - labelExtraWidth / 2,
@@ -281,25 +281,25 @@
     let panelRect;
     if (direction === 'right') {
       panelRect = {
-        x: drawer.x + metrics.drawerSize - connectorOverlap,
+        x: drawer.x + metrics.drawerSize + panelGap,
         y: drawer.y,
-        width: grid.width + connectorOverlap,
-        height: Math.max(metrics.drawerSize, grid.height),
+        width: grid.width,
+        height: grid.height,
       };
     } else if (direction === 'left') {
       panelRect = {
-        x: drawer.x - grid.width,
+        x: drawer.x - grid.width - panelGap,
         y: drawer.y,
-        width: grid.width + connectorOverlap,
-        height: Math.max(metrics.drawerSize, grid.height),
+        width: grid.width,
+        height: grid.height,
       };
     } else {
-      // 'down'
+      // 'down' - starts below the drawer handle and its label
       panelRect = {
         x: drawer.x,
-        y: drawer.y + metrics.drawerSize - connectorOverlap,
-        width: Math.max(metrics.drawerSize, grid.width),
-        height: grid.height + connectorOverlap,
+        y: drawer.y + metrics.drawerSize + labelHeight + 2,
+        width: grid.width,
+        height: grid.height,
       };
     }
 

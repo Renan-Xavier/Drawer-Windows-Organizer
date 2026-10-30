@@ -3,9 +3,6 @@
   const { computeDrawerLayout, createInteractionMachine } = DrawerGeometry;
 
   const canvas = document.getElementById('desktop-canvas');
-  const quickPill = document.getElementById('quick-pill');
-  const btnNewDrawer = document.getElementById('btn-new-drawer');
-  const selectScale = document.getElementById('select-scale');
   const contextMenu = document.getElementById('context-menu');
   const toastEl = document.getElementById('toast');
 
@@ -19,7 +16,6 @@
 
   // Maps drawer.id -> { rootEl, handleEl, previewEl, labelWrapEl, panelEl, itemsGridEl, machine }
   const drawerNodes = new Map();
-  let activeRenameDrawerId = null;
   let toastTimer = null;
 
   function showToast(msg) {
@@ -29,26 +25,18 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       toastEl.classList.add('hidden');
-    }, 2800);
+    }, 2500);
   }
 
   function syncInteractiveRects() {
     if (!window.drawerAPI) return;
     const rects = [];
 
-    // Include quick-pill bar
-    if (quickPill) {
-      const r = quickPill.getBoundingClientRect();
-      rects.push({ x: r.left, y: r.top, width: r.width, height: r.height });
-    }
-
-    // Include context menu if visible
     if (contextMenu && !contextMenu.classList.contains('hidden')) {
       const r = contextMenu.getBoundingClientRect();
       rects.push({ x: r.left, y: r.top, width: r.width, height: r.height });
     }
 
-    // Include each drawer's computed interactive bounding box
     for (const drawer of appState.drawers) {
       const entry = drawerNodes.get(drawer.id);
       const mState = entry
@@ -108,55 +96,6 @@
     syncInteractiveRects();
   }
 
-  function startInlineRename(drawerId) {
-    const drawer = appState.drawers.find((d) => d.id === drawerId);
-    const entry = drawerNodes.get(drawerId);
-    if (!drawer || !entry) return;
-
-    activeRenameDrawerId = drawerId;
-    window.drawerAPI.setForceInteractive(true);
-
-    entry.labelWrapEl.innerHTML = '';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'drawer-label-input';
-    input.value = drawer.name;
-    input.maxLength = 40;
-    entry.labelWrapEl.appendChild(input);
-
-    input.focus();
-    input.select();
-
-    let committed = false;
-    const commit = async () => {
-      if (committed) return;
-      committed = true;
-      activeRenameDrawerId = null;
-      window.drawerAPI.setForceInteractive(false);
-      const nextState = await window.drawerAPI.renameDrawer(
-        drawerId,
-        input.value
-      );
-      applyState(nextState);
-    };
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        commit();
-      } else if (e.key === 'Escape') {
-        committed = true;
-        activeRenameDrawerId = null;
-        window.drawerAPI.setForceInteractive(false);
-        renderAllDrawers();
-      }
-    });
-
-    input.addEventListener('blur', () => {
-      commit();
-    });
-  }
-
   function renderPreviewSlots(previewEl, previewItems) {
     previewEl.innerHTML = '';
     for (let i = 0; i < 4; i++) {
@@ -167,7 +106,7 @@
         if (item.iconDataUrl) {
           const img = document.createElement('img');
           img.src = item.iconDataUrl;
-          img.alt = item.name;
+          img.alt = '';
           slot.appendChild(img);
         } else {
           const span = document.createElement('span');
@@ -187,10 +126,9 @@
     if (items.length === 0) {
       const emptySlot = document.createElement('div');
       emptySlot.className = 'drawer-empty-slot';
-      emptySlot.title = 'Arraste ícones para cá ou clique para adicionar';
       emptySlot.innerHTML = `
         <span class="empty-plus">+</span>
-        <span class="empty-hint">Arraste ou clique</span>
+        <span class="empty-hint">Arraste aqui</span>
       `;
       emptySlot.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -204,13 +142,12 @@
     for (const item of items) {
       const cell = document.createElement('div');
       cell.className = 'drawer-item';
-      cell.title = `${item.name}\nClique para abrir | Botão direito para opções`;
 
       if (item.iconDataUrl) {
         const img = document.createElement('img');
         img.className = 'drawer-item-icon';
         img.src = item.iconDataUrl;
-        img.alt = item.name;
+        img.alt = '';
         cell.appendChild(img);
       } else {
         const fb = document.createElement('div');
@@ -265,8 +202,6 @@
 
     const handleEl = document.createElement('div');
     handleEl.className = 'drawer-handle';
-    handleEl.title =
-      'Passe o mouse para espiar (1,25s) | Clique para fixar aberta | Arraste para mover';
 
     const previewEl = document.createElement('div');
     previewEl.className = 'drawer-preview-grid';
@@ -290,7 +225,6 @@
     rootEl.appendChild(labelWrapEl);
     rootEl.appendChild(panelEl);
 
-    // Máquina de estados: Hover abre imediatamente, segura 1.25s (1250ms) ao sair; Clique fixa/fecha
     const machine = createInteractionMachine({
       hoverDelayMs: 1250,
       onChange: (mState) => {
@@ -308,7 +242,6 @@
       machine.mouseLeave();
     });
 
-    // Arrastar a gaveta pela tela vs. Clicar para fixar/fechar
     handleEl.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       e.stopPropagation();
@@ -366,7 +299,6 @@
       window.addEventListener('mouseup', onMouseUp);
     });
 
-    // Menu de contexto na gaveta
     handleEl.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -381,8 +313,8 @@
           onClick: () => machine.toggleClick(),
         },
         {
-          label: 'Renomear Gaveta',
-          onClick: () => startInlineRename(currentDrawer.id),
+          label: 'Configurar Gavetas...',
+          onClick: () => window.drawerAPI.openSettingsWindow(),
         },
         {
           label: '+ Adicionar Ícones / Atalhos...',
@@ -449,7 +381,6 @@
       ]);
     });
 
-    // Drag & Drop de arquivos/atalhos da Área de Trabalho para dentro da gaveta
     const onDragOver = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -485,11 +416,6 @@
           filePaths
         );
         applyState(nextState);
-        showToast(
-          filePaths.length === 1
-            ? 'Ícone adicionado à gaveta!'
-            : `${filePaths.length} ícones adicionados à gaveta!`
-        );
       }
     };
 
@@ -556,18 +482,15 @@
 
     renderPreviewSlots(previewEl, previewItems);
 
-    if (activeRenameDrawerId !== drawer.id) {
-      labelWrapEl.innerHTML = '';
-      const labelSpan = document.createElement('span');
-      labelSpan.className = 'drawer-label';
-      labelSpan.textContent = drawer.name;
-      labelSpan.title = 'Clique duplo para dar outro nome à gaveta';
-      labelSpan.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        startInlineRename(drawer.id);
-      });
-      labelWrapEl.appendChild(labelSpan);
-    }
+    labelWrapEl.innerHTML = '';
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'drawer-label';
+    labelSpan.textContent = drawer.name;
+    labelSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      window.drawerAPI.openSettingsWindow();
+    });
+    labelWrapEl.appendChild(labelSpan);
 
     renderPanelItems(itemsGridEl, drawer);
   }
@@ -587,10 +510,6 @@
       updateSingleDrawerDOM(drawer);
     }
 
-    if (selectScale && appState.settings) {
-      selectScale.value = appState.settings.iconScaleMode || 'auto';
-    }
-
     syncInteractiveRects();
   }
 
@@ -605,7 +524,6 @@
     renderAllDrawers();
   }
 
-  // Eventos globais
   window.addEventListener('click', () => {
     closeContextMenu();
   });
@@ -616,27 +534,6 @@
     renderAllDrawers();
   });
 
-  if (btnNewDrawer) {
-    btnNewDrawer.addEventListener('click', async () => {
-      const nextState = await window.drawerAPI.createDrawer({});
-      applyState(nextState);
-      const newest = nextState.drawers[nextState.drawers.length - 1];
-      if (newest) {
-        startInlineRename(newest.id);
-      }
-    });
-  }
-
-  if (selectScale) {
-    selectScale.addEventListener('change', async () => {
-      const nextState = await window.drawerAPI.updateSettings({
-        iconScaleMode: selectScale.value,
-      });
-      applyState(nextState);
-    });
-  }
-
-  // Inicialização
   if (window.drawerAPI) {
     window.drawerAPI.getInitialState().then((initial) => {
       applyState(initial);

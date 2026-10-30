@@ -10,8 +10,9 @@
     "start": "electron .",
     "test": "node --test tests/*.test.js",
     "icons": "node src/main/icon-generator.js",
-    "dist": "npm run icons && electron-builder --win --x64",
-    "pack": "npm run icons && electron-builder --dir"
+    "build:native": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /target:exe /optimize+ /out:assets\\win32-helper.exe src\\native\\Win32Helper.cs",
+    "dist": "npm run icons && npm run build:native && electron-builder --win --x64",
+    "pack": "npm run icons && npm run build:native && electron-builder --dir"
   },
   "build": {
     "appId": "com.drawer.desktop.organizer",
@@ -23,6 +24,9 @@
       "src/**/*",
       "assets/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "assets/**/*"
     ],
     "win": {
       "target": [

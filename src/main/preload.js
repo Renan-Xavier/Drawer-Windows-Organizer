@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('drawerAPI', {
     ipcRenderer.invoke('drawer:update-settings', settings),
   refreshWindowsIconScale: () =>
     ipcRenderer.invoke('drawer:refresh-win-scale'),
+  openSettingsWindow: () => ipcRenderer.invoke('drawer:open-settings'),
+  closeSettingsWindow: () => ipcRenderer.invoke('drawer:close-settings'),
   setInteractiveRects: (rects) =>
     ipcRenderer.send('drawer:set-interactive-rects', rects),
   setForceInteractive: (force) =>

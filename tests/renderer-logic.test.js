@@ -49,4 +49,22 @@ test('computeDrawerLayout computes Discord-style 2x2 preview, connected panel bo
     openLayout.interactiveRect.width > closedLayout.interactiveRect.width + 200
   );
   assert.equal(openLayout.isPinned, true);
+
+  // Panel must NEVER overlap the drawer handle in any direction
+  const handleRight = drawer.x + openLayout.metrics.drawerSize;
+  assert.ok(
+    openLayout.panelRect.x >= handleRight + 6,
+    'Right-opening panel must start to the right of the drawer handle without overlapping'
+  );
+
+  const downLayout = computeDrawerLayout(
+    { ...drawer, preferredDirection: 'down' },
+    { isOpen: true, isPinned: false, scale: 'small', screenWidth: 1920, screenHeight: 1080 }
+  );
+  const handleBottomWithLabel = drawer.y + downLayout.metrics.drawerSize + 26;
+  assert.ok(
+    downLayout.panelRect.y >= handleBottomWithLabel,
+    'Down-opening panel must start below the drawer handle and label without overlapping'
+  );
 });
+
