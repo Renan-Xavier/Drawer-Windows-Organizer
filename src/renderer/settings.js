@@ -1,5 +1,7 @@
 (function () {
   const scaleSelect = document.getElementById('scale-select');
+  const bgModeSelect = document.getElementById('bg-mode-select');
+  const startupSelect = document.getElementById('startup-select');
   const vaultCheck = document.getElementById('vault-check');
   const btnAddDrawer = document.getElementById('btn-add-drawer');
   const drawerListEl = document.getElementById('drawer-list');
@@ -12,6 +14,17 @@
     if (!state) return;
 
     scaleSelect.value = state.settings?.iconScaleMode || 'auto';
+    if (bgModeSelect) {
+      bgModeSelect.value =
+        state.settings?.backgroundMode === 'transparent'
+          ? 'transparent'
+          : 'blue';
+    }
+    if (startupSelect) {
+      startupSelect.value = state.settings?.launchAtStartup
+        ? 'enabled'
+        : 'disabled';
+    }
     vaultCheck.checked = Boolean(state.settings?.moveDesktopFilesToVault);
 
     drawerListEl.innerHTML = '';
@@ -77,6 +90,24 @@
     renderDrawers(next);
   });
 
+  if (bgModeSelect) {
+    bgModeSelect.addEventListener('change', async () => {
+      const next = await window.drawerAPI.updateSettings({
+        backgroundMode: bgModeSelect.value,
+      });
+      renderDrawers(next);
+    });
+  }
+
+  if (startupSelect) {
+    startupSelect.addEventListener('change', async () => {
+      const next = await window.drawerAPI.updateSettings({
+        launchAtStartup: startupSelect.value === 'enabled',
+      });
+      renderDrawers(next);
+    });
+  }
+
   vaultCheck.addEventListener('change', async () => {
     const next = await window.drawerAPI.updateSettings({
       moveDesktopFilesToVault: vaultCheck.checked,
@@ -107,6 +138,10 @@
     }
     await window.drawerAPI.updateSettings({
       iconScaleMode: scaleSelect.value,
+      backgroundMode: bgModeSelect ? bgModeSelect.value : 'blue',
+      launchAtStartup: startupSelect
+        ? startupSelect.value === 'enabled'
+        : false,
       moveDesktopFilesToVault: vaultCheck.checked,
     });
     window.drawerAPI.closeSettingsWindow();

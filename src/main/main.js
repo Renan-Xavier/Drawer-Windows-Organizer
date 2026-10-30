@@ -36,6 +36,30 @@ let hitTestInterval = null;
 let keepBottomCounter = 0;
 let desktopWatcherProc = null;
 
+const OVERLAY_TOP_GUARD_PX = 48;
+
+function getOverlayBounds() {
+  const updated = screen.getPrimaryDisplay().workArea;
+  return {
+    x: updated.x,
+    y: updated.y - OVERLAY_TOP_GUARD_PX,
+    width: updated.width,
+    height: updated.height + OVERLAY_TOP_GUARD_PX,
+  };
+}
+
+function syncLoginItemSettings(enabled) {
+  if (process.platform !== 'win32') return;
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(enabled),
+      path: process.execPath,
+    });
+  } catch {
+    // ignore
+  }
+}
+
 function getWindowHwndDecimal(win) {
   if (!win || win.isDestroyed()) return null;
   try {
@@ -237,8 +261,7 @@ function setupHitTestLoop() {
 
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
-      const updated = screen.getPrimaryDisplay().workArea;
-      mainWindow.setBounds(updated);
+      mainWindow.setBounds(getOverlayBounds());
       keepWindowAtDesktopBottomAsync(mainWindow);
     }
 
@@ -246,8 +269,6 @@ function setupHitTestLoop() {
     if (keepBottomCounter === 0) {
       if (!desktopWatcherProc) {
         startDesktopWatcher(mainWindow);
-      } else {
-        keepWindowAtDesktopBottomAsync(mainWindow);
       }
     }
 
@@ -260,9 +281,9 @@ function setupHitTestLoop() {
     }
 
     const cursor = screen.getCursorScreenPoint();
-    const bounds = mainWindow.getBounds();
-    const localX = cursor.x - bounds.x;
-    const localY = cursor.y - bounds.y;
+    const workArea = screen.getPrimaryDisplay().workArea;
+    const localX = cursor.x - workArea.x;
+    const localY = cursor.y - workArea.y;
 
     const pad = 14;
     const hit = interactiveRects.some(
@@ -286,21 +307,22 @@ function setupHitTestLoop() {
 }
 
 function createOverlayWindow(iconPath) {
-  const display = screen.getPrimaryDisplay();
-  const { x, y, width, height } = display.workArea;
+  const { x, y, width, height } = getOverlayBounds();
 
   mainWindow = new BrowserWindow({
     x,
     y,
     width,
     height,
+    enableLargerThanScreen: true,
     title: '',
     frame: false,
     transparent: true,
-    thickFrame: false,
+    backgroundColor: '#00000000',
     roundedCorners: false,
     hasShadow: false,
     focusable: false,
+    closable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -326,8 +348,7 @@ function createOverlayWindow(iconPath) {
     }
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.restore();
-    const updated = screen.getPrimaryDisplay().workArea;
-    mainWindow.setBounds(updated);
+    mainWindow.setBounds(getOverlayBounds());
     pinWindowToDesktopBottom(mainWindow);
   });
 
@@ -351,8 +372,7 @@ function createOverlayWindow(iconPath) {
 
   screen.on('display-metrics-changed', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    const updated = screen.getPrimaryDisplay().workArea;
-    mainWindow.setBounds(updated);
+    mainWindow.setBounds(getOverlayBounds());
     pinWindowToDesktopBottom(mainWindow);
     broadcastState();
   });
@@ -369,7 +389,7 @@ function openSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 540,
-    height: 540,
+    height: 610,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -392,9 +412,6 @@ function openSettingsWindow() {
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      pinWindowToDesktopBottom(mainWindow);
-    }
   });
 }
 
@@ -402,7 +419,9 @@ function updateTrayMenu() {
   if (!tray || !store) return;
   const current = store.getState();
   const mode = current.settings.iconScaleMode;
+  const bgMode = current.settings.backgroundMode || 'blue';
   const vault = Boolean(current.settings.moveDesktopFilesToVault);
+  const launchAtStartup = Boolean(current.settings.launchAtStartup);
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -429,6 +448,29 @@ function updateTrayMenu() {
       },
     },
     { type: 'separator' },
+    {
+      label: 'Fundo das Gavetas e Ícones',
+      submenu: [
+        {
+          label: 'Azul (Padrão)',
+          type: 'radio',
+          checked: bgMode === 'blue',
+          click: () => {
+            store.setSettings({ backgroundMode: 'blue' });
+            broadcastState();
+          },
+        },
+        {
+          label: '100% Transparente (Apenas Linhas)',
+          type: 'radio',
+          checked: bgMode === 'transparent',
+          click: () => {
+            store.setSettings({ backgroundMode: 'transparent' });
+            broadcastState();
+          },
+        },
+      ],
+    },
     {
       label: 'Tamanho dos Ícones',
       submenu: [
@@ -471,11 +513,37 @@ function updateTrayMenu() {
       ],
     },
     {
+      label: 'Inicializar com o Windows',
+      submenu: [
+        {
+          label: 'Ativado',
+          type: 'radio',
+          checked: launchAtStartup === true,
+          click: () => {
+            store.setSettings({ launchAtStartup: true });
+            syncLoginItemSettings(true);
+            broadcastState();
+          },
+        },
+        {
+          label: 'Desativado',
+          type: 'radio',
+          checked: launchAtStartup === false,
+          click: () => {
+            store.setSettings({ launchAtStartup: false });
+            syncLoginItemSettings(false);
+            broadcastState();
+          },
+        },
+      ],
+    },
+    {
       label: 'Mover arquivo da Área de Trabalho ao arrastar',
       type: 'checkbox',
       checked: vault,
       click: (menuItem) => {
         store.setSettings({ moveDesktopFilesToVault: menuItem.checked });
+        notifyDesktopFileRestored(app.getPath('desktop'));
         broadcastState();
       },
     },
@@ -648,6 +716,21 @@ function registerIpcHandlers() {
 
   ipcMain.handle('drawer:update-settings', (_event, partialSettings) => {
     store.setSettings(partialSettings);
+    if (
+      partialSettings &&
+      Object.prototype.hasOwnProperty.call(
+        partialSettings,
+        'moveDesktopFilesToVault'
+      )
+    ) {
+      notifyDesktopFileRestored(app.getPath('desktop'));
+    }
+    if (
+      partialSettings &&
+      Object.prototype.hasOwnProperty.call(partialSettings, 'launchAtStartup')
+    ) {
+      syncLoginItemSettings(partialSettings.launchAtStartup);
+    }
     broadcastState();
     return getEffectivePayload();
   });
@@ -699,6 +782,7 @@ if (!gotTheLock) {
       desktopDir: app.getPath('desktop'),
     });
     store.load();
+    syncLoginItemSettings(store.getState().settings.launchAtStartup);
 
     registerIpcHandlers();
     createOverlayWindow(appIconPath);

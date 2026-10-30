@@ -130,3 +130,82 @@ test('findDrawerAtPoint detects whether drop point is inside open drawer panel, 
   );
 });
 
+test('settings UI and stylesheet support blue and 100% transparent (no-blur, lines-only) background mode', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const settingsHtml = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'settings.html'),
+    'utf8'
+  );
+  const stylesCss = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'styles.css'),
+    'utf8'
+  );
+  const appJs = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'app.js'),
+    'utf8'
+  );
+
+  // Settings window has select #bg-mode-select with 'blue' and 'transparent' options (no slider)
+  assert.match(settingsHtml, /id="bg-mode-select"/);
+  assert.match(settingsHtml, /<option value="blue">/);
+  assert.match(settingsHtml, /<option value="transparent">/);
+  assert.doesNotMatch(settingsHtml, /type="range"/);
+
+  // Stylesheet defines .theme-transparent with transparent background and no blur
+  assert.match(stylesCss, /\.theme-transparent\s+\.drawer-handle/);
+  assert.match(stylesCss, /\.theme-transparent\s+\.drawer-panel/);
+  assert.match(stylesCss, /backdrop-filter:\s*none/);
+
+  // Renderer applies theme-transparent based on backgroundMode
+  assert.match(appJs, /theme-transparent/);
+});
+
+test('Win32Helper and mainWindow strip WS_CAPTION and WS_SYSMENU so top white titlebar never appears', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const helperCs = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'native', 'Win32Helper.cs'),
+    'utf8'
+  );
+  const mainJs = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'main.js'),
+    'utf8'
+  );
+
+  // EnsureOnDesktop must strip WS_CAPTION and WS_SYSMENU from GWL_STYLE and set WS_POPUP
+  assert.match(helperCs, /WS_CAPTION/);
+  assert.match(helperCs, /WS_SYSMENU/);
+  assert.match(helperCs, /SetWindowLongPtr\(hwnd,\s*GWL_STYLE/);
+  assert.doesNotMatch(helperCs, /SetWindowText\(hwnd/);
+
+  // mainWindow must disable closable so WS_SYSMENU close button is never created on the desktop overlay
+  assert.match(mainJs, /closable:\s*false/);
+  assert.match(mainJs, /OVERLAY_TOP_GUARD_PX/);
+  assert.match(mainJs, /setLoginItemSettings/);
+});
+
+test('settings UI includes launchAtStartup (Inicializar com o Windows) option with enabled and disabled choices', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+
+  const settingsHtml = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'settings.html'),
+    'utf8'
+  );
+  const settingsJs = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'settings.js'),
+    'utf8'
+  );
+
+  assert.match(settingsHtml, /id="startup-select"/);
+  assert.match(settingsHtml, /<option value="enabled">Ativado<\/option>/);
+  assert.match(settingsHtml, /<option value="disabled">Desativado<\/option>/);
+  assert.match(settingsJs, /launchAtStartup/);
+});
+
+
+
+

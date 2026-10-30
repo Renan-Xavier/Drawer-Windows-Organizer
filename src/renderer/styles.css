@@ -30,9 +30,11 @@ body {
 }
 
 .desktop-canvas {
-  position: relative;
+  position: absolute;
+  top: 48px;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: calc(100vh - 48px);
   pointer-events: none;
 }
 
@@ -523,3 +525,80 @@ body {
   pointer-events: none;
   transform: translateY(8px);
 }
+
+/* ==========================================================================
+   Modo 100% Transparente (Sem cor azul de fundo e sem efeito de borrão,
+   exibindo apenas as linhas de contorno normais)
+   ========================================================================== */
+.theme-transparent .drawer-handle {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.theme-transparent .drawer-handle:hover {
+  background: transparent;
+  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+.theme-transparent .drawer-unit.is-pinned .drawer-handle {
+  background: transparent;
+  box-shadow: none;
+  border-color: #ffffff;
+}
+
+.theme-transparent .drawer-unit.drag-target .drawer-handle,
+.theme-transparent .drawer-unit.drag-target .drawer-panel {
+  background: transparent;
+  box-shadow: none;
+  border-color: #ffffff;
+}
+
+.theme-transparent .preview-slot {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.theme-transparent .drawer-panel {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.theme-transparent .drawer-item {
+  background: transparent;
+  border-color: transparent;
+}
+
+.theme-transparent .drawer-item:hover {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.theme-transparent .drawer-empty-slot {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.48);
+  color: #f8fafc;
+}
+
+.theme-transparent .drawer-empty-slot:hover {
+  background: transparent;
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.theme-transparent .drawer-label {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.theme-transparent .drawer-label:hover {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.75);
+}
+

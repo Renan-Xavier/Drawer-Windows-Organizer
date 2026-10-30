@@ -11,7 +11,11 @@
   const toastEl = document.getElementById('toast');
 
   let appState = {
-    settings: { iconScaleMode: 'auto', moveDesktopFilesToVault: false },
+    settings: {
+      iconScaleMode: 'auto',
+      backgroundMode: 'blue',
+      moveDesktopFilesToVault: false,
+    },
     effectiveScale: 'medium',
     screenWidth: window.innerWidth,
     screenHeight: window.innerHeight,
@@ -32,13 +36,25 @@
     }, 2500);
   }
 
+  function toCanvasPoint(clientX, clientY) {
+    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') {
+      return { x: clientX, y: clientY };
+    }
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: clientX - r.left,
+      y: clientY - r.top,
+    };
+  }
+
   function syncInteractiveRects() {
     if (!window.drawerAPI) return;
     const rects = [];
 
     if (contextMenu && !contextMenu.classList.contains('hidden')) {
       const r = contextMenu.getBoundingClientRect();
-      rects.push({ x: r.left, y: r.top, width: r.width, height: r.height });
+      const pt = toCanvasPoint(r.left, r.top);
+      rects.push({ x: pt.x, y: pt.y, width: r.width, height: r.height });
     }
 
     for (const drawer of appState.drawers) {
@@ -269,10 +285,14 @@
               srcEntry.machine.mouseEnter();
             }
 
+            const canvasPt = toCanvasPoint(
+              moveEvent.clientX,
+              moveEvent.clientY
+            );
             const hitDrawerId = findDrawerAtPoint(
               appState.drawers,
-              moveEvent.clientX,
-              moveEvent.clientY,
+              canvasPt.x,
+              canvasPt.y,
               {
                 openStates: getOpenStatesMap(),
                 scale: appState.effectiveScale || 'medium',
@@ -327,10 +347,11 @@
             return;
           }
 
+          const dropCanvasPt = toCanvasPoint(upEvent.clientX, upEvent.clientY);
           const hitDrawerId = findDrawerAtPoint(
             appState.drawers,
-            upEvent.clientX,
-            upEvent.clientY,
+            dropCanvasPt.x,
+            dropCanvasPt.y,
             {
               openStates: getOpenStatesMap(),
               scale: appState.effectiveScale || 'medium',
@@ -707,6 +728,12 @@
   }
 
   function renderAllDrawers() {
+    const isTransparent = appState.settings?.backgroundMode === 'transparent';
+    document.body.classList.toggle('theme-transparent', isTransparent);
+    if (canvas) {
+      canvas.classList.toggle('theme-transparent', isTransparent);
+    }
+
     const activeIds = new Set(appState.drawers.map((d) => d.id));
 
     for (const [id, entry] of drawerNodes.entries()) {
@@ -740,8 +767,8 @@
   });
 
   window.addEventListener('resize', () => {
-    appState.screenWidth = window.innerWidth;
-    appState.screenHeight = window.innerHeight;
+    appState.screenWidth = canvas ? canvas.clientWidth : window.innerWidth;
+    appState.screenHeight = canvas ? canvas.clientHeight : window.innerHeight;
     renderAllDrawers();
   });
 

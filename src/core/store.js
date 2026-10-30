@@ -65,6 +65,8 @@ function createDefaultState() {
   return {
     settings: {
       iconScaleMode: 'auto', // 'auto' | 'small' | 'medium' | 'large'
+      backgroundMode: 'blue', // 'blue' | 'transparent'
+      launchAtStartup: false, // true | false
       moveDesktopFilesToVault: true, // Default true so icons move into the drawer and back out to Desktop
     },
     drawers: [
@@ -144,11 +146,19 @@ function createDrawerStore({ storageDir, desktopDir }) {
     if (fs.existsSync(stateFilePath)) {
       try {
         const parsed = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
+        const mergedSettings = {
+          ...createDefaultState().settings,
+          ...(parsed.settings || {}),
+        };
+        mergedSettings.backgroundMode =
+          mergedSettings.backgroundMode === 'transparent'
+            ? 'transparent'
+            : 'blue';
+        mergedSettings.launchAtStartup = Boolean(
+          mergedSettings.launchAtStartup
+        );
         state = {
-          settings: {
-            ...createDefaultState().settings,
-            ...(parsed.settings || {}),
-          },
+          settings: mergedSettings,
           drawers: Array.isArray(parsed.drawers) ? parsed.drawers : [],
         };
         syncVaultWithSettings();
@@ -463,10 +473,14 @@ function createDrawerStore({ storageDir, desktopDir }) {
 
   function setSettings(partial = {}) {
     const current = getState();
-    current.settings = {
+    const merged = {
       ...current.settings,
       ...partial,
     };
+    merged.backgroundMode =
+      merged.backgroundMode === 'transparent' ? 'transparent' : 'blue';
+    merged.launchAtStartup = Boolean(merged.launchAtStartup);
+    current.settings = merged;
     syncVaultWithSettings();
     save();
     return current.settings;

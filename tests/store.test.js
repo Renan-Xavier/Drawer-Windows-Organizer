@@ -139,3 +139,40 @@ test('moveItemToDesktop and moveItemBetweenDrawers allow dragging icons back to 
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
+
+test('createDrawerStore defaults backgroundMode to blue and persists switching to transparent', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drawer-bg-test-'));
+  const storageDir = path.join(tmpRoot, 'appdata');
+  const desktopDir = path.join(tmpRoot, 'Desktop');
+  fs.mkdirSync(desktopDir, { recursive: true });
+
+  const store = createDrawerStore({ storageDir, desktopDir });
+  const initialState = store.load();
+  assert.equal(initialState.settings.backgroundMode, 'blue');
+
+  const updated = store.setSettings({ backgroundMode: 'transparent' });
+  assert.equal(updated.backgroundMode, 'transparent');
+
+  // Reload from disk to verify persistence
+  const reloadedStore = createDrawerStore({ storageDir, desktopDir });
+  const reloadedState = reloadedStore.load();
+  assert.equal(reloadedState.settings.backgroundMode, 'transparent');
+
+  // Verify invalid values fall back to 'blue'
+  const fallback = reloadedStore.setSettings({ backgroundMode: 'invalid-mode' });
+  assert.equal(fallback.backgroundMode, 'blue');
+
+  // Verify launchAtStartup defaults to false and persists true/false
+  assert.equal(reloadedStore.getState().settings.launchAtStartup, false);
+  const startupOn = reloadedStore.setSettings({ launchAtStartup: true });
+  assert.equal(startupOn.launchAtStartup, true);
+
+  const reloadedStore2 = createDrawerStore({ storageDir, desktopDir });
+  assert.equal(reloadedStore2.load().settings.launchAtStartup, true);
+
+  const startupOff = reloadedStore2.setSettings({ launchAtStartup: false });
+  assert.equal(startupOff.launchAtStartup, false);
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+});
+

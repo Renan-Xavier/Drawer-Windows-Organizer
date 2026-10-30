@@ -15,6 +15,16 @@ namespace DrawerWin32
         private const int GWL_EXSTYLE = -20;
         private const int GWLP_HWNDPARENT = -8;
 
+        private const long WS_POPUP = 0x80000000L;
+        private const long WS_VISIBLE = 0x10000000L;
+        private const long WS_CAPTION = 0x00C00000L;
+        private const long WS_THICKFRAME = 0x00040000L;
+        private const long WS_MINIMIZEBOX = 0x00020000L;
+        private const long WS_MAXIMIZEBOX = 0x00010000L;
+        private const long WS_SYSMENU = 0x00080000L;
+        private const long WS_BORDER = 0x00800000L;
+        private const long WS_DLGFRAME = 0x00400000L;
+
         private const long WS_EX_TOPMOST = 0x00000008L;
         private const long WS_EX_TRANSPARENT = 0x00000020L;
         private const long WS_EX_TOOLWINDOW = 0x00000080L;
@@ -29,7 +39,9 @@ namespace DrawerWin32
 
         private const uint SWP_NOSIZE = 0x0001;
         private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOZORDER = 0x0004;
         private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_FRAMECHANGED = 0x0020;
         private const uint SWP_SHOWWINDOW = 0x0040;
         private const uint SWP_NOSENDCHANGING = 0x0400;
 
@@ -69,9 +81,6 @@ namespace DrawerWin32
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-        [DllImport("user32.dll", EntryPoint = "SetWindowTextW", CharSet = CharSet.Unicode)]
-        private static extern bool SetWindowText(IntPtr hWnd, string lpString);
 
         [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)]
         private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
@@ -250,10 +259,12 @@ namespace DrawerWin32
         {
             if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return;
 
-            if (isInitialPin)
+            // Strip any non-client caption/system-menu/border styles so Windows never draws a white title bar with an X button
+            long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64() & 0xFFFFFFFFL;
+            long desiredStyle = ((style & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_BORDER | WS_DLGFRAME)) | WS_POPUP | WS_VISIBLE) & 0xFFFFFFFFL;
+            if (style != desiredStyle)
             {
-                // Clear title text so Windows never draws a caption label if it ever tries to minimize
-                SetWindowText(hwnd, "");
+                SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(desiredStyle));
             }
 
             // If Windows ever minimized the window (e.g. via Show Desktop / Win+M), restore it without stealing focus
@@ -267,9 +278,9 @@ namespace DrawerWin32
                 ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             }
 
-            // Ensure toolwindow + noactivate extended styles without corrupting Chromium's frameless DWM GWL_STYLE
-            long exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-            long desiredEx = (exStyle & ~(WS_EX_APPWINDOW | WS_EX_TOPMOST)) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            // Ensure toolwindow + noactivate extended styles
+            long exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & 0xFFFFFFFFL;
+            long desiredEx = ((exStyle & ~(WS_EX_APPWINDOW | WS_EX_TOPMOST)) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & 0xFFFFFFFFL;
             if (exStyle != desiredEx)
             {
                 SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(desiredEx));
@@ -277,17 +288,6 @@ namespace DrawerWin32
 
             IntPtr hDesktopHost, hDefView;
             FindDesktopHandles(out hDesktopHost, out hDefView);
-
-            // Set SHELLDLL_DefView as owner so Windows Shell treats this window as part of the Desktop on Win+D / Show Desktop
-            IntPtr desiredOwner = hDefView != IntPtr.Zero ? hDefView : hDesktopHost;
-            if (desiredOwner != IntPtr.Zero)
-            {
-                IntPtr currentOwner = GetWindowLongPtr(hwnd, GWLP_HWNDPARENT);
-                if (currentOwner != desiredOwner)
-                {
-                    SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, desiredOwner);
-                }
-            }
 
             if (hDesktopHost == IntPtr.Zero)
             {
