@@ -65,7 +65,7 @@ function createDefaultState() {
   return {
     settings: {
       iconScaleMode: 'auto', // 'auto' | 'small' | 'medium' | 'large'
-      moveDesktopFilesToVault: false, // Default false so dragging creates safe shortcut link unless enabled
+      moveDesktopFilesToVault: true, // Default true so icons move into the drawer and back out to Desktop
     },
     drawers: [
       {
@@ -96,6 +96,50 @@ function createDrawerStore({ storageDir, desktopDir }) {
 
   let state = null;
 
+  function syncVaultWithSettings() {
+    if (!state || !desktopDir) return false;
+    let changed = false;
+    const shouldVault = Boolean(state.settings?.moveDesktopFilesToVault);
+
+    for (const drawer of state.drawers || []) {
+      for (const item of drawer.items || []) {
+        if (shouldVault) {
+          if (
+            !item.vaulted &&
+            item.targetPath &&
+            fs.existsSync(item.targetPath) &&
+            isInsideDirectory(item.targetPath, desktopDir)
+          ) {
+            const itemVaultDir = path.join(vaultRootDir, drawer.id);
+            fs.mkdirSync(itemVaultDir, { recursive: true });
+            const destPath = path.join(
+              itemVaultDir,
+              path.basename(item.targetPath)
+            );
+            const origPath = item.targetPath;
+            moveFileSafe(origPath, destPath);
+            item.originalDesktopPath = origPath;
+            item.targetPath = destPath;
+            item.vaulted = true;
+            changed = true;
+          }
+        } else if (item.vaulted && item.targetPath && fs.existsSync(item.targetPath)) {
+          const restored = restoreItemFileIfVaulted(item);
+          if (restored) {
+            item.targetPath = restored;
+            item.vaulted = false;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      save();
+    }
+    return changed;
+  }
+
   function load() {
     if (fs.existsSync(stateFilePath)) {
       try {
@@ -107,6 +151,7 @@ function createDrawerStore({ storageDir, desktopDir }) {
           },
           drawers: Array.isArray(parsed.drawers) ? parsed.drawers : [],
         };
+        syncVaultWithSettings();
         return state;
       } catch {
         // Fallback to default on corrupt file
@@ -195,26 +240,78 @@ function createDrawerStore({ storageDir, desktopDir }) {
   }
 
   function restoreItemFileIfVaulted(item) {
-    if (
-      item &&
-      item.vaulted &&
-      item.targetPath &&
-      item.originalDesktopPath &&
-      fs.existsSync(item.targetPath)
-    ) {
-      let restoreDest = item.originalDesktopPath;
-      if (fs.existsSync(restoreDest)) {
-        const ext = path.extname(restoreDest);
-        const base = path.basename(restoreDest, ext);
-        restoreDest = path.join(
-          path.dirname(restoreDest),
-          `${base} (Restaurado)${ext}`
-        );
+    if (!item) return null;
+
+    const inVault =
+      item.vaulted ||
+      (item.targetPath && isInsideDirectory(item.targetPath, vaultRootDir));
+
+    if (inVault && item.targetPath && fs.existsSync(item.targetPath)) {
+      let restoreDest =
+        item.originalDesktopPath ||
+        (desktopDir
+          ? path.join(desktopDir, path.basename(item.targetPath))
+          : null);
+
+      if (restoreDest) {
+        if (fs.existsSync(restoreDest)) {
+          // If the exact same file or a shortcut already exists on Desktop, replace/keep it cleanly
+          const ext = path.extname(restoreDest).toLowerCase();
+          let sameContent = false;
+          try {
+            const bufA = fs.readFileSync(item.targetPath);
+            const bufB = fs.readFileSync(restoreDest);
+            sameContent = bufA.equals(bufB);
+          } catch {
+            sameContent = false;
+          }
+
+          if (sameContent || ext === '.lnk' || ext === '.url') {
+            try {
+              fs.unlinkSync(restoreDest);
+            } catch {
+              // ignore
+            }
+          } else {
+            const rawExt = path.extname(restoreDest);
+            const base = path.basename(restoreDest, rawExt);
+            restoreDest = path.join(
+              path.dirname(restoreDest),
+              `${base} (Restaurado)${rawExt}`
+            );
+          }
+        }
+        moveFileSafe(item.targetPath, restoreDest);
+        return restoreDest;
       }
-      moveFileSafe(item.targetPath, restoreDest);
-      return restoreDest;
     }
-    return item ? item.targetPath : null;
+
+    // If not vaulted and user drags item back to Desktop, ensure shortcut exists on Desktop if possible
+    if (
+      desktopDir &&
+      item.targetPath &&
+      fs.existsSync(item.targetPath) &&
+      !isInsideDirectory(item.targetPath, desktopDir)
+    ) {
+      const ext = path.extname(item.targetPath).toLowerCase();
+      if (ext === '.lnk' || ext === '.url') {
+        const destOnDesktop =
+          item.originalDesktopPath ||
+          path.join(desktopDir, path.basename(item.targetPath));
+        if (!fs.existsSync(destOnDesktop)) {
+          try {
+            fs.mkdirSync(path.dirname(destOnDesktop), { recursive: true });
+            fs.copyFileSync(item.targetPath, destOnDesktop);
+            return destOnDesktop;
+          } catch {
+            // fallback
+          }
+        }
+        return destOnDesktop;
+      }
+    }
+
+    return item.originalDesktopPath || item.targetPath || null;
   }
 
   function addItemToDrawer(
@@ -277,15 +374,68 @@ function createDrawerStore({ storageDir, desktopDir }) {
   }
 
   function removeItemFromDrawer(drawerId, itemId) {
+    const res = moveItemToDesktop(drawerId, itemId);
+    return res.ok;
+  }
+
+  function moveItemToDesktop(drawerId, itemId) {
     const drawer = getDrawer(drawerId);
-    if (!drawer) return false;
+    if (!drawer) return { ok: false, removedItem: null, restoredPath: null };
     const idx = drawer.items.findIndex((it) => it.id === itemId);
-    if (idx === -1) return false;
+    if (idx === -1) return { ok: false, removedItem: null, restoredPath: null };
 
     const [removed] = drawer.items.splice(idx, 1);
-    restoreItemFileIfVaulted(removed);
+    const restoredPath = restoreItemFileIfVaulted(removed);
     save();
-    return true;
+    return {
+      ok: true,
+      removedItem: removed,
+      restoredPath,
+    };
+  }
+
+  function moveItemBetweenDrawers(fromDrawerId, itemId, toDrawerId) {
+    if (!fromDrawerId || !toDrawerId || fromDrawerId === toDrawerId) {
+      return null;
+    }
+    const fromDrawer = getDrawer(fromDrawerId);
+    const toDrawer = getDrawer(toDrawerId);
+    if (!fromDrawer || !toDrawer) return null;
+
+    const idx = fromDrawer.items.findIndex((it) => it.id === itemId);
+    if (idx === -1) return null;
+
+    const [item] = fromDrawer.items.splice(idx, 1);
+
+    // If vaulted, move the vaulted file into the target drawer's vault subfolder
+    const inVault =
+      item.vaulted ||
+      (item.targetPath && isInsideDirectory(item.targetPath, vaultRootDir));
+    if (inVault && item.targetPath && fs.existsSync(item.targetPath)) {
+      const targetVaultDir = path.join(vaultRootDir, toDrawer.id);
+      fs.mkdirSync(targetVaultDir, { recursive: true });
+      const newVaultPath = path.join(
+        targetVaultDir,
+        path.basename(item.targetPath)
+      );
+      if (path.resolve(item.targetPath) !== path.resolve(newVaultPath)) {
+        moveFileSafe(item.targetPath, newVaultPath);
+        item.targetPath = newVaultPath;
+      }
+    }
+
+    const duplicate = toDrawer.items.find(
+      (it) =>
+        it.targetPath === item.targetPath ||
+        (item.originalDesktopPath &&
+          it.originalDesktopPath === item.originalDesktopPath)
+    );
+    if (!duplicate) {
+      toDrawer.items.push(item);
+    }
+
+    save();
+    return duplicate || item;
   }
 
   function renameItemInDrawer(drawerId, itemId, newName) {
@@ -317,6 +467,7 @@ function createDrawerStore({ storageDir, desktopDir }) {
       ...current.settings,
       ...partial,
     };
+    syncVaultWithSettings();
     save();
     return current.settings;
   }
@@ -332,6 +483,8 @@ function createDrawerStore({ storageDir, desktopDir }) {
     setDrawerDirection,
     addItemToDrawer,
     removeItemFromDrawer,
+    moveItemToDesktop,
+    moveItemBetweenDrawers,
     renameItemInDrawer,
     deleteDrawer,
     setSettings,

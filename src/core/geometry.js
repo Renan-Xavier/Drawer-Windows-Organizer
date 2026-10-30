@@ -328,11 +328,74 @@
       previewItems,
       direction,
       grid,
+      baseRect,
       panelRect,
       interactiveRect,
       isOpen,
       isPinned,
     };
+  }
+
+  function isPointInRect(x, y, rect, pad = 0) {
+    if (!rect) return false;
+    return (
+      x >= rect.x - pad &&
+      x <= rect.x + rect.width + pad &&
+      y >= rect.y - pad &&
+      y <= rect.y + rect.height + pad
+    );
+  }
+
+  /**
+   * Hit-tests a client point (x, y) against all drawers' handles and open panels.
+   * Returns the matching drawer.id or null if the point is over the empty Desktop.
+   */
+  function findDrawerAtPoint(
+    drawers = [],
+    x = 0,
+    y = 0,
+    {
+      openStates = {},
+      scale = 'medium',
+      screenWidth = 1920,
+      screenHeight = 1080,
+      pad = 6,
+    } = {}
+  ) {
+    if (!Array.isArray(drawers)) return null;
+
+    // First check open panels (top-most visual layer when open)
+    for (const drawer of drawers) {
+      const st = openStates[drawer.id] || { isOpen: false, isPinned: false };
+      if (!st.isOpen) continue;
+      const layout = computeDrawerLayout(drawer, {
+        isOpen: true,
+        isPinned: st.isPinned,
+        scale,
+        screenWidth,
+        screenHeight,
+      });
+      if (isPointInRect(x, y, layout.panelRect, pad)) {
+        return drawer.id;
+      }
+    }
+
+    // Next check drawer handles + labels
+    for (const drawer of drawers) {
+      const st = openStates[drawer.id] || { isOpen: false, isPinned: false };
+      const layout = computeDrawerLayout(drawer, {
+        isOpen: st.isOpen,
+        isPinned: st.isPinned,
+        scale,
+        screenWidth,
+        screenHeight,
+      });
+      if (isPointInRect(x, y, layout.baseRect, pad)) {
+        return drawer.id;
+      }
+    }
+
+    return null;
   }
 
   return {
@@ -341,5 +404,6 @@
     computeOpenDirection,
     createInteractionMachine,
     computeDrawerLayout,
+    findDrawerAtPoint,
   };
 });

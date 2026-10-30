@@ -20,6 +20,14 @@ contextBridge.exposeInMainWorld('drawerAPI', {
     ipcRenderer.invoke('drawer:pick-files', { drawerId }),
   removeItemFromDrawer: (drawerId, itemId) =>
     ipcRenderer.invoke('drawer:remove-item', { drawerId, itemId }),
+  moveItemToDesktop: (drawerId, itemId) =>
+    ipcRenderer.invoke('drawer:move-item-to-desktop', { drawerId, itemId }),
+  moveItemBetweenDrawers: (fromDrawerId, itemId, toDrawerId) =>
+    ipcRenderer.invoke('drawer:move-item-between-drawers', {
+      fromDrawerId,
+      itemId,
+      toDrawerId,
+    }),
   renameItemInDrawer: (drawerId, itemId, name) =>
     ipcRenderer.invoke('drawer:rename-item', { drawerId, itemId, name }),
   openItem: (targetPath) =>

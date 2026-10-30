@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { computeDrawerLayout } = require('../src/core/geometry');
+const {
+  computeDrawerLayout,
+  findDrawerAtPoint,
+} = require('../src/core/geometry');
 
 test('computeDrawerLayout computes Discord-style 2x2 preview, connected panel bounds, and hit-test rects', () => {
   const drawer = {
@@ -65,6 +68,65 @@ test('computeDrawerLayout computes Discord-style 2x2 preview, connected panel bo
   assert.ok(
     downLayout.panelRect.y >= handleBottomWithLabel,
     'Down-opening panel must start below the drawer handle and label without overlapping'
+  );
+});
+
+test('findDrawerAtPoint detects whether drop point is inside open drawer panel, another drawer handle, or empty desktop', () => {
+  const drawers = [
+    {
+      id: 'd1',
+      name: 'Principais',
+      x: 40,
+      y: 100,
+      preferredDirection: 'right',
+      items: [{ id: 'i1', name: 'App 1' }, { id: 'i2', name: 'App 2' }],
+    },
+    {
+      id: 'd2',
+      name: 'Jogos',
+      x: 40,
+      y: 300,
+      preferredDirection: 'right',
+      items: [],
+    },
+  ];
+
+  const openStates = {
+    d1: { isOpen: true, isPinned: false },
+    d2: { isOpen: false, isPinned: false },
+  };
+
+  // Point inside d1's open panel (to the right of x=40+64+8=112)
+  assert.equal(
+    findDrawerAtPoint(drawers, 140, 130, {
+      openStates,
+      scale: 'medium',
+      screenWidth: 1920,
+      screenHeight: 1080,
+    }),
+    'd1'
+  );
+
+  // Point inside d2's closed handle (x=40..104, y=300..364)
+  assert.equal(
+    findDrawerAtPoint(drawers, 60, 320, {
+      openStates,
+      scale: 'medium',
+      screenWidth: 1920,
+      screenHeight: 1080,
+    }),
+    'd2'
+  );
+
+  // Point on empty Desktop (x=600, y=500) -> returns null so item is restored to Desktop
+  assert.equal(
+    findDrawerAtPoint(drawers, 600, 500, {
+      openStates,
+      scale: 'medium',
+      screenWidth: 1920,
+      screenHeight: 1080,
+    }),
+    null
   );
 });
 

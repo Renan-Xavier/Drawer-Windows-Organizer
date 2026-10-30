@@ -11,7 +11,7 @@ const {
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const { execFileSync, execFile } = require('node:child_process');
+const { execFileSync, execFile, spawn } = require('node:child_process');
 
 const {
   createDrawerStore,
@@ -34,6 +34,7 @@ let forceInteractive = false;
 let isCurrentlyIgnoringMouse = null;
 let hitTestInterval = null;
 let keepBottomCounter = 0;
+let desktopWatcherProc = null;
 
 function getWindowHwndDecimal(win) {
   if (!win || win.isDestroyed()) return null;
@@ -72,6 +73,55 @@ function keepWindowAtDesktopBottomAsync(win) {
     helperExe,
     ['keep-bottom', hwndStr],
     { windowsHide: true, timeout: 1000 },
+    () => {}
+  );
+}
+
+function startDesktopWatcher(win) {
+  if (process.platform !== 'win32') return;
+  stopDesktopWatcher();
+  const hwndStr = getWindowHwndDecimal(win);
+  const helperExe = getWin32HelperPath();
+  if (!hwndStr || !fs.existsSync(helperExe)) return;
+  try {
+    desktopWatcherProc = spawn(
+      helperExe,
+      ['watch-desktop', hwndStr, String(process.pid)],
+      {
+        windowsHide: true,
+        stdio: 'ignore',
+      }
+    );
+    desktopWatcherProc.on('error', () => {
+      desktopWatcherProc = null;
+    });
+    desktopWatcherProc.on('exit', () => {
+      desktopWatcherProc = null;
+    });
+  } catch {
+    desktopWatcherProc = null;
+  }
+}
+
+function stopDesktopWatcher() {
+  if (desktopWatcherProc) {
+    try {
+      desktopWatcherProc.kill();
+    } catch {
+      // ignore
+    }
+    desktopWatcherProc = null;
+  }
+}
+
+function notifyDesktopFileRestored(filePath) {
+  if (process.platform !== 'win32' || !filePath) return;
+  const helperExe = getWin32HelperPath();
+  if (!fs.existsSync(helperExe)) return;
+  execFile(
+    helperExe,
+    ['notify-desktop-file', filePath],
+    { windowsHide: true, timeout: 1500 },
     () => {}
   );
 }
@@ -185,9 +235,20 @@ function setupHitTestLoop() {
   hitTestInterval = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    keepBottomCounter = (keepBottomCounter + 1) % 45;
-    if (keepBottomCounter === 0) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+      const updated = screen.getPrimaryDisplay().workArea;
+      mainWindow.setBounds(updated);
       keepWindowAtDesktopBottomAsync(mainWindow);
+    }
+
+    keepBottomCounter = (keepBottomCounter + 1) % 30;
+    if (keepBottomCounter === 0) {
+      if (!desktopWatcherProc) {
+        startDesktopWatcher(mainWindow);
+      } else {
+        keepWindowAtDesktopBottomAsync(mainWindow);
+      }
     }
 
     if (forceInteractive) {
@@ -233,6 +294,7 @@ function createOverlayWindow(iconPath) {
     y,
     width,
     height,
+    title: '',
     frame: false,
     transparent: true,
     thickFrame: false,
@@ -254,8 +316,24 @@ function createOverlayWindow(iconPath) {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
+  mainWindow.on('page-title-updated', (e) => {
+    e.preventDefault();
+  });
+
+  mainWindow.on('minimize', (e) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.restore();
+    const updated = screen.getPrimaryDisplay().workArea;
+    mainWindow.setBounds(updated);
+    pinWindowToDesktopBottom(mainWindow);
+  });
+
   mainWindow.once('ready-to-show', () => {
     pinWindowToDesktopBottom(mainWindow);
+    startDesktopWatcher(mainWindow);
     if (process.env.DRAWER_SMOKE_TEST === '1') {
       setTimeout(() => {
         app.quit();
@@ -462,6 +540,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('drawer:delete', (_event, { drawerId }) => {
     store.deleteDrawer(drawerId);
+    notifyDesktopFileRestored(app.getPath('desktop'));
     broadcastState();
     return getEffectivePayload();
   });
@@ -512,10 +591,34 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('drawer:remove-item', (_event, { drawerId, itemId }) => {
-    store.removeItemFromDrawer(drawerId, itemId);
+    const res = store.moveItemToDesktop(drawerId, itemId);
+    if (res && res.restoredPath) {
+      notifyDesktopFileRestored(res.restoredPath);
+    }
     broadcastState();
     return getEffectivePayload();
   });
+
+  ipcMain.handle(
+    'drawer:move-item-to-desktop',
+    (_event, { drawerId, itemId }) => {
+      const res = store.moveItemToDesktop(drawerId, itemId);
+      if (res && res.restoredPath) {
+        notifyDesktopFileRestored(res.restoredPath);
+      }
+      broadcastState();
+      return getEffectivePayload();
+    }
+  );
+
+  ipcMain.handle(
+    'drawer:move-item-between-drawers',
+    (_event, { fromDrawerId, itemId, toDrawerId }) => {
+      store.moveItemBetweenDrawers(fromDrawerId, itemId, toDrawerId);
+      broadcastState();
+      return getEffectivePayload();
+    }
+  );
 
   ipcMain.handle('drawer:rename-item', (_event, { drawerId, itemId, name }) => {
     store.renameItemInDrawer(drawerId, itemId, name);
@@ -614,5 +717,6 @@ if (!gotTheLock) {
 
   app.on('before-quit', () => {
     if (hitTestInterval) clearInterval(hitTestInterval);
+    stopDesktopWatcher();
   });
 }

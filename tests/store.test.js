@@ -99,3 +99,43 @@ test('createDrawerStore manages drawers, persists state, and safely vaults/resto
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
+
+test('moveItemToDesktop and moveItemBetweenDrawers allow dragging icons back to Desktop or to another drawer', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drawer-dragout-test-'));
+  const storageDir = path.join(tmpRoot, 'appdata');
+  const desktopDir = path.join(tmpRoot, 'Desktop');
+  fs.mkdirSync(desktopDir, { recursive: true });
+
+  const store = createDrawerStore({ storageDir, desktopDir });
+  store.load();
+
+  const [drawer1, drawer2] = store.getState().drawers;
+  const gameFile = path.join(desktopDir, 'EldenRing.url');
+  fs.writeFileSync(gameFile, '[InternetShortcut]\r\nURL=steam://rungameid/1245620\r\n', 'utf8');
+
+  const item = store.addItemToDrawer(drawer1.id, {
+    name: 'Elden Ring',
+    filePath: gameFile,
+    iconDataUrl: 'data:image/png;base64,BBB',
+    moveFromDesktop: true,
+  });
+
+  assert.equal(fs.existsSync(gameFile), false);
+  assert.equal(store.getDrawer(drawer1.id).items.length, 1);
+
+  // Move item from drawer1 to drawer2
+  const moved = store.moveItemBetweenDrawers(drawer1.id, item.id, drawer2.id);
+  assert.ok(moved);
+  assert.equal(store.getDrawer(drawer1.id).items.length, 0);
+  assert.equal(store.getDrawer(drawer2.id).items.length, 1);
+  assert.equal(fs.existsSync(moved.targetPath), true);
+
+  // Now drag item out of drawer2 back to the Desktop
+  const result = store.moveItemToDesktop(drawer2.id, moved.id);
+  assert.equal( result.ok, true );
+  assert.equal(result.restoredPath, gameFile);
+  assert.equal(fs.existsSync(gameFile), true);
+  assert.equal(store.getDrawer(drawer2.id).items.length, 0);
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+});

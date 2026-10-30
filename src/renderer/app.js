@@ -1,6 +1,10 @@
 /* global DrawerGeometry */
 (function () {
-  const { computeDrawerLayout, createInteractionMachine } = DrawerGeometry;
+  const {
+    computeDrawerLayout,
+    createInteractionMachine,
+    findDrawerAtPoint,
+  } = DrawerGeometry;
 
   const canvas = document.getElementById('desktop-canvas');
   const contextMenu = document.getElementById('context-menu');
@@ -119,6 +123,71 @@
     }
   }
 
+  function getOpenStatesMap() {
+    const map = {};
+    for (const drawer of appState.drawers) {
+      const entry = drawerNodes.get(drawer.id);
+      map[drawer.id] = entry
+        ? entry.machine.getState()
+        : { isOpen: false, isPinned: false };
+    }
+    return map;
+  }
+
+  function createItemDragGhost(item) {
+    const ghost = document.createElement('div');
+    ghost.className = 'drawer-item-drag-ghost over-desktop';
+
+    const card = document.createElement('div');
+    card.className = 'drag-ghost-card';
+
+    if (item.iconDataUrl) {
+      const img = document.createElement('img');
+      img.className = 'drag-ghost-icon';
+      img.src = item.iconDataUrl;
+      img.alt = '';
+      card.appendChild(img);
+    } else {
+      const fb = document.createElement('div');
+      fb.className = 'drawer-item-fallback';
+      fb.textContent = (item.name || '?').slice(0, 1).toUpperCase();
+      card.appendChild(fb);
+    }
+
+    const title = document.createElement('span');
+    title.className = 'drag-ghost-name';
+    title.textContent = item.name;
+    card.appendChild(title);
+
+    const badge = document.createElement('div');
+    badge.className = 'drag-ghost-badge';
+    badge.textContent = 'Soltar na Área de Trabalho';
+
+    ghost.appendChild(card);
+    ghost.appendChild(badge);
+    document.body.appendChild(ghost);
+
+    return {
+      el: ghost,
+      setPosition(x, y) {
+        ghost.style.left = `${x}px`;
+        ghost.style.top = `${y}px`;
+      },
+      setMode(mode, labelText) {
+        ghost.classList.remove(
+          'over-desktop',
+          'over-other-drawer',
+          'inside-source-drawer'
+        );
+        ghost.classList.add(mode);
+        badge.textContent = labelText;
+      },
+      remove() {
+        ghost.remove();
+      },
+    };
+  }
+
   function renderPanelItems(itemsGridEl, drawer) {
     itemsGridEl.innerHTML = '';
     const items = Array.isArray(drawer.items) ? drawer.items : [];
@@ -142,6 +211,7 @@
     for (const item of items) {
       const cell = document.createElement('div');
       cell.className = 'drawer-item';
+      cell.title = `${item.name} — Clique para abrir ou arraste para fora para devolver à Área de Trabalho`;
 
       if (item.iconDataUrl) {
         const img = document.createElement('img');
@@ -161,12 +231,151 @@
       nameSpan.textContent = item.name;
       cell.appendChild(nameSpan);
 
-      cell.addEventListener('click', async (e) => {
+      cell.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
         e.stopPropagation();
-        const res = await window.drawerAPI.openItem(item.targetPath);
-        if (!res || !res.ok) {
-          showToast(res?.error || 'Não foi possível abrir este atalho.');
+        closeContextMenu();
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        let moved = false;
+        let ghost = null;
+
+        const srcEntry = drawerNodes.get(drawer.id);
+        if (srcEntry) {
+          srcEntry.machine.mouseEnter();
         }
+
+        const clearAllDrawerHighlights = () => {
+          for (const [, nodeEntry] of drawerNodes.entries()) {
+            nodeEntry.rootEl.classList.remove('drag-target');
+          }
+        };
+
+        const onMouseMove = (moveEvent) => {
+          const dx = moveEvent.clientX - startX;
+          const dy = moveEvent.clientY - startY;
+
+          if (!moved && Math.hypot(dx, dy) > 6) {
+            moved = true;
+            cell.classList.add('is-dragging-source');
+            window.drawerAPI.setForceInteractive(true);
+            ghost = createItemDragGhost(item);
+          }
+
+          if (moved && ghost) {
+            ghost.setPosition(moveEvent.clientX, moveEvent.clientY);
+            if (srcEntry) {
+              srcEntry.machine.mouseEnter();
+            }
+
+            const hitDrawerId = findDrawerAtPoint(
+              appState.drawers,
+              moveEvent.clientX,
+              moveEvent.clientY,
+              {
+                openStates: getOpenStatesMap(),
+                scale: appState.effectiveScale || 'medium',
+                screenWidth: appState.screenWidth || window.innerWidth,
+                screenHeight: appState.screenHeight || window.innerHeight,
+                pad: 8,
+              }
+            );
+
+            clearAllDrawerHighlights();
+
+            if (hitDrawerId === drawer.id) {
+              ghost.setMode(
+                'inside-source-drawer',
+                'Arraste para fora para mover ao Desktop'
+              );
+            } else if (hitDrawerId) {
+              const targetDrawer = appState.drawers.find(
+                (d) => d.id === hitDrawerId
+              );
+              const targetEntry = drawerNodes.get(hitDrawerId);
+              if (targetEntry) {
+                targetEntry.rootEl.classList.add('drag-target');
+                targetEntry.machine.mouseEnter();
+              }
+              ghost.setMode(
+                'over-other-drawer',
+                `Mover para "${targetDrawer ? targetDrawer.name : 'Gaveta'}"`
+              );
+            } else {
+              ghost.setMode('over-desktop', 'Soltar na Área de Trabalho');
+            }
+          }
+        };
+
+        const onMouseUp = async (upEvent) => {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          cell.classList.remove('is-dragging-source');
+          clearAllDrawerHighlights();
+          if (ghost) {
+            ghost.remove();
+            ghost = null;
+          }
+          window.drawerAPI.setForceInteractive(false);
+
+          if (!moved) {
+            const res = await window.drawerAPI.openItem(item.targetPath);
+            if (!res || !res.ok) {
+              showToast(res?.error || 'Não foi possível abrir este atalho.');
+            }
+            return;
+          }
+
+          const hitDrawerId = findDrawerAtPoint(
+            appState.drawers,
+            upEvent.clientX,
+            upEvent.clientY,
+            {
+              openStates: getOpenStatesMap(),
+              scale: appState.effectiveScale || 'medium',
+              screenWidth: appState.screenWidth || window.innerWidth,
+              screenHeight: appState.screenHeight || window.innerHeight,
+              pad: 8,
+            }
+          );
+
+          if (hitDrawerId === drawer.id) {
+            return;
+          }
+
+          if (hitDrawerId && hitDrawerId !== drawer.id) {
+            const targetDrawer = appState.drawers.find(
+              (d) => d.id === hitDrawerId
+            );
+            const nextState = await window.drawerAPI.moveItemBetweenDrawers(
+              drawer.id,
+              item.id,
+              hitDrawerId
+            );
+            applyState(nextState);
+            showToast(
+              `"${item.name}" movido para "${
+                targetDrawer ? targetDrawer.name : 'outra gaveta'
+              }".`
+            );
+            return;
+          }
+
+          // Dropped on the Desktop!
+          const nextState = await window.drawerAPI.moveItemToDesktop(
+            drawer.id,
+            item.id
+          );
+          applyState(nextState);
+          showToast(`"${item.name}" movido de volta para a Área de Trabalho.`);
+          if (srcEntry) {
+            srcEntry.machine.mouseLeave();
+          }
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
       });
 
       cell.addEventListener('contextmenu', (e) => {
@@ -178,14 +387,16 @@
             onClick: () => window.drawerAPI.openItem(item.targetPath),
           },
           {
-            label: 'Remover da Gaveta',
-            danger: true,
+            label: 'Mover de volta para a Área de Trabalho',
             onClick: async () => {
-              const nextState = await window.drawerAPI.removeItemFromDrawer(
+              const nextState = await window.drawerAPI.moveItemToDesktop(
                 drawer.id,
                 item.id
               );
               applyState(nextState);
+              showToast(
+                `"${item.name}" movido de volta para a Área de Trabalho.`
+              );
             },
           },
         ]);
