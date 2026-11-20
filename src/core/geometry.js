@@ -5,7 +5,7 @@
     root.DrawerGeometry = factory();
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const SNAP_THRESHOLD_PX = 18;
+  const SNAP_THRESHOLD_PX = 2;
 
   const SCALE_CONFIGS = {
     small: {
@@ -252,7 +252,7 @@
     snapThreshold = SNAP_THRESHOLD_PX,
   } = {}) {
     const labelHeight = 28;
-    const minMargin = 12;
+    const minMargin = 6;
     const rawX = Number(x) || 0;
     const rawY = Number(y) || 0;
     const maxY = Math.max(minMargin, screenHeight - drawerSize - labelHeight);

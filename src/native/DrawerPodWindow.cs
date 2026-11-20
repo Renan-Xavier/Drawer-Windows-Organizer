@@ -762,13 +762,6 @@ namespace DrawerNative
 
             ApplyThemeBrushes(metrics, isTransparent);
 
-            // Collapsed Magnetic Edge Tab Mode (when docked to screen edge and closed)
-            if (isEdgeDocked && !showOpenPanel)
-            {
-                RenderCollapsedEdgeTab(metrics, dockedEdge, screenW, screenH);
-                return;
-            }
-
             _edgeTabBorder.Visibility = Visibility.Collapsed;
             _handleContainer.Visibility = Visibility.Visible;
             if (_inlineRenameBox.Visibility != Visibility.Visible)

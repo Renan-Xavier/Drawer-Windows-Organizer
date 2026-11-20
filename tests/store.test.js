@@ -255,11 +255,11 @@ test('store.moveDrawer persists magnetic edge docking state (left, right, top, n
   store.load();
   const drawer = store.getState().drawers[0];
 
-  const dockedLeft = store.moveDrawer(drawer.id, 6, 200, 64, 1920, 1080);
+  const dockedLeft = store.moveDrawer(drawer.id, 1, 200, 64, 1920, 1080);
   assert.equal(dockedLeft.dockedEdge, 'left');
   assert.equal(dockedLeft.x, 0);
 
-  const dockedRight = store.moveDrawer(drawer.id, 1920 - 64 - 4, 250, 64, 1920, 1080);
+  const dockedRight = store.moveDrawer(drawer.id, 1920 - 64 - 1, 250, 64, 1920, 1080);
   assert.equal(dockedRight.dockedEdge, 'right');
   assert.equal(dockedRight.x, 1920 - 64);
 

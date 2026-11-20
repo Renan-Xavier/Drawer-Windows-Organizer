@@ -126,7 +126,7 @@ namespace DrawerNative
 
     public static class DrawerGeometryEngine
     {
-        public const int SNAP_THRESHOLD_PX = 18;
+        public const int SNAP_THRESHOLD_PX = 2;
         public const int LABEL_HEIGHT_PX = 26;
         public const int PANEL_GAP_PX = 6;
         public const int EDGE_TAB_THICKNESS_PX = 14;
@@ -269,7 +269,7 @@ namespace DrawerNative
 
         public static DockResult ComputeMagneticDock(int x, int y, int drawerSize, int screenWidth, int screenHeight)
         {
-            int minMargin = 12;
+            int minMargin = 6;
             int maxX = Math.Max(minMargin, screenWidth - drawerSize - minMargin);
             int maxY = Math.Max(minMargin, screenHeight - drawerSize - LABEL_HEIGHT_PX);
 

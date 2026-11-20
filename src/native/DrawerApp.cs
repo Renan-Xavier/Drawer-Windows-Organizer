@@ -843,14 +843,16 @@ namespace DrawerNative
                                   (g5.Cols == 4 && g5.Rows == 2) &&
                                   (gDown2.Cols == 1 && gDown2.Rows == 2);
 
-                // 2. Magnetic dock test
-                DockResult dLeft = DrawerGeometryEngine.ComputeMagneticDock(6, 200, 64, 1920, 1080);
-                DockResult dRight = DrawerGeometryEngine.ComputeMagneticDock(1920 - 64 - 8, 250, 64, 1920, 1080);
-                DockResult dTop = DrawerGeometryEngine.ComputeMagneticDock(400, 10, 64, 1920, 1080);
+                // 2. Magnetic dock test (SNAP_THRESHOLD_PX = 2px: only extreme edge snaps; y=12 / x=12 stays free on Desktop)
+                DockResult dLeft = DrawerGeometryEngine.ComputeMagneticDock(1, 200, 64, 1920, 1080);
+                DockResult dRight = DrawerGeometryEngine.ComputeMagneticDock(1920 - 64 - 1, 250, 64, 1920, 1080);
+                DockResult dTop = DrawerGeometryEngine.ComputeMagneticDock(400, 1, 64, 1920, 1080);
+                DockResult dNearTopRow = DrawerGeometryEngine.ComputeMagneticDock(499, 12, 64, 1920, 1080);
                 DockResult dFree = DrawerGeometryEngine.ComputeMagneticDock(300, 300, 64, 1920, 1080);
                 bool magneticDockOk = (dLeft.DockedEdge == "left" && dLeft.X == 0 && dLeft.ForcedDirection == "right") &&
                                       (dRight.DockedEdge == "right" && dRight.X == 1920 - 64 && dRight.ForcedDirection == "left") &&
                                       (dTop.DockedEdge == "top" && dTop.Y == 0 && dTop.ForcedDirection == "down") &&
+                                      (dNearTopRow.DockedEdge == "none" && dNearTopRow.Y == 12) &&
                                       (dFree.DockedEdge == "none" && dFree.X == 300 && dFree.Y == 300);
 
                 // 3. Startup Registry test (using isolated test value name)

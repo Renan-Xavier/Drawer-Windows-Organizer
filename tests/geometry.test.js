@@ -181,11 +181,11 @@ test('createInteractionMachine pins open on first click and closes on second cli
   });
 });
 
-test('computeMagneticDock snaps Pod to left, right, or top screen edges within SNAP_THRESHOLD_PX (18px)', () => {
-  assert.equal(SNAP_THRESHOLD_PX, 18);
+test('computeMagneticDock snaps Pod to left, right, or top screen edges within SNAP_THRESHOLD_PX (2px) and leaves y=12 free', () => {
+  assert.equal(SNAP_THRESHOLD_PX, 2);
 
   const leftSnap = computeMagneticDock({
-    x: 8,
+    x: 1,
     y: 220,
     drawerSize: 64,
     screenWidth: 1920,
@@ -197,7 +197,7 @@ test('computeMagneticDock snaps Pod to left, right, or top screen edges within S
   assert.equal(leftSnap.forcedDirection, 'right');
 
   const rightSnap = computeMagneticDock({
-    x: 1920 - 64 - 10,
+    x: 1920 - 64 - 1,
     y: 300,
     drawerSize: 64,
     screenWidth: 1920,
@@ -210,7 +210,7 @@ test('computeMagneticDock snaps Pod to left, right, or top screen edges within S
 
   const topSnap = computeMagneticDock({
     x: 500,
-    y: 12,
+    y: 1,
     drawerSize: 64,
     screenWidth: 1920,
     screenHeight: 1080,
@@ -219,6 +219,17 @@ test('computeMagneticDock snaps Pod to left, right, or top screen edges within S
   assert.equal(topSnap.x, 500);
   assert.equal(topSnap.y, 0);
   assert.equal(topSnap.forcedDirection, 'down');
+
+  const nearTopRowDesktop = computeMagneticDock({
+    x: 500,
+    y: 12,
+    drawerSize: 64,
+    screenWidth: 1920,
+    screenHeight: 1080,
+  });
+  assert.equal(nearTopRowDesktop.dockedEdge, 'none');
+  assert.equal(nearTopRowDesktop.x, 500);
+  assert.equal(nearTopRowDesktop.y, 12);
 
   const freeDesktop = computeMagneticDock({
     x: 240,
@@ -238,7 +249,7 @@ test('computeDrawerLayout reflects magnetic edge docking and forces inward openi
     {
       id: 'd-left',
       name: 'Borda Esquerda',
-      x: 4,
+      x: 1,
       y: 180,
       preferredDirection: 'left',
       items: [{ id: '1' }, { id: '2' }],
@@ -252,7 +263,7 @@ test('computeDrawerLayout reflects magnetic edge docking and forces inward openi
     {
       id: 'd-right',
       name: 'Borda Direita',
-      x: 1920 - 64 - 5,
+      x: 1920 - 64 - 1,
       y: 180,
       preferredDirection: 'right',
       items: [{ id: '1' }, { id: '2' }],
