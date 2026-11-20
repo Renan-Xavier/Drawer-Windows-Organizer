@@ -11,6 +11,19 @@
 
 **Autor:** Renan Santa Rosa Xavier | 🌐 **Portfólio:** [renan-xavier.vercel.app](https://renan-xavier.vercel.app)
 
+> [!CAUTION]
+> **AVISO: ESTE PROGRAMA FOI TOTALMENTE DESENVOLVIDO POR APENAS RENAN SANTA ROSA XAVIER, E NÃO ME RESPONSABILIZO POR FORNECIMENTO DESTE PROGRAMA EM SITES DE TERCEIROS, É UM PROGRAMA DE CÓDIGO ABERTO E QUALQUER PESSOA PODE TER ACESSO E MANIPULAR OS ARQUIVOS, NÃO BAIXE POR NENHUM LUGAR QUE NÃO SEJA PELO MEU GITHUB OFICIAL.**
+
+---
+
+## 💚 Apoie o Projeto & Contato (PIX / WhatsApp)
+
+Caso esse programa tenha lhe ajudado em algo, pense na hipótese de me ajudar também financeiramente para continuar apoiando meus projetos, no PIX abaixo, qualquer valor já ajudaria:
+
+* **Aceito transferências Via PIX:** `+55 21 985692631`
+* **Em nome de:** `Renan Santa Rosa Xavier - Mercado pago`
+* **Contato:** E também aceito contatos via **WhatsApp (`+55 21 985692631`)** para trabalho ou feedback de melhorias no projeto.
+
 ---
 
 ## 📌 Visão Geral
@@ -32,6 +45,17 @@ Diferente de sobreposições de tela cheia tradicionais, cada gaveta no **Drawer
 * **Execução 100% Fiel de Qualquer Atalho ou Programa (`.lnk`, `.url`, `.exe`, Pastas):** Preserva argumentos de inicialização (como Discord/Spotify `Update.exe --processStart`), diretório de trabalho (`WorkingDirectory`) e protocolos de jogos (`steam://rungameid/...`).
 * **Catálogo Rápido de Aplicativos (1 Clique):** Escaneia automaticamente todos os atalhos da **Área de Trabalho** e programas instalados no **Menu Iniciar** com busca em tempo real para adicionar às gavetas sem precisar procurar executáveis em pastas ocultas.
 * **Inicialização Real com o Windows:** Registro direto e validado em `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+
+---
+
+## 🛡️ Configurações Automáticas do Windows (Pronto para Qualquer Usuário)
+
+O **Drawer 2.0** e seu instalador (`Drawer-Setup-2.0.0.exe`) já aplicam automaticamente todas as configurações necessárias no Windows de qualquer usuário sem precisar de nenhuma configuração manual:
+
+1. **Sincronização Automática de Token com o Windows Explorer (`TryRelaunchUnelevatedViaExplorer`):** Caso o programa ou instalador seja aberto como Administrador, ele sincroniza automaticamente seu nível de integridade (*Medium Integrity*) com o `explorer.exe` e habilita `ChangeWindowMessageFilterEx` (`WM_DROPFILES`, `WM_COPYDATA`, `WM_COPYGLOBALDATA`), garantindo que arrastar ícones da Área de Trabalho para dentro e para fora das gavetas funcione imediatamente sem bloqueio de UIPI do Windows.
+2. **Proteção Automática contra o Botão "Mostrar Área de Trabalho" (`DWMWA_EXCLUDED_FROM_PEEK`):** Todas as gavetas aplicam automaticamente os atributos nativos do Desktop Window Manager (`DWMWA_EXCLUDED_FROM_PEEK = 12`, `DWMWA_DISALLOW_PEEK = 11` e detector de elevação do `WorkerW`), permanecendo visíveis quando o usuário clica em *Mostrar Área de Trabalho* (`Win + D`) e ficando atrás de todas as janelas normais de programas.
+3. **Instalação Persistente & Inicialização Automática com o Windows (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`):** Mesmo que executado diretamente de outra pasta, o `Drawer.exe` garante sua cópia persistente em `%LOCALAPPDATA%\Programs\Drawer\Drawer.exe` e registra a inicialização automática com o Windows.
+4. **Posicionamento Exato ao Arrastar para o Desktop (`SysListView32` / `LVM_SETITEMPOSITION32`):** Ao arrastar qualquer atalho de dentro de uma gaveta para fora, o ícone é posicionado na Área de Trabalho exatamente na coordenada onde você soltou o mouse.
 
 ---
 

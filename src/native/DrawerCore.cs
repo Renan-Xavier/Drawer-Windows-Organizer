@@ -20,7 +20,7 @@ namespace DrawerNative
         {
             iconScaleMode = "auto";
             backgroundMode = "blue";
-            launchAtStartup = false;
+            launchAtStartup = true;
             moveDesktopFilesToVault = true;
         }
     }

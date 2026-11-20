@@ -251,9 +251,9 @@ namespace DrawerInstallerApp
     {
         public InstallerWindow()
         {
-            Title = "Instalador — Drawer 2.0 (Pods Nativos & Bordas Magnéticas)";
-            Width = 500;
-            Height = 360;
+            Title = "Instalador — Drawer 2.0 (Por Renan Santa Rosa Xavier)";
+            Width = 540;
+            Height = 460;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = new SolidColorBrush(Color.FromRgb(15, 23, 42));
@@ -271,11 +271,12 @@ namespace DrawerInstallerApp
 
             stack.Children.Add(new TextBlock
             {
-                Text = "Pods Nativos Independentes • Abas Magnéticas de Borda • Menu de Contexto Real do Windows • Catálogo Rápido de Apps",
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(147, 197, 253)),
+                Text = "Desenvolvido por Renan Santa Rosa Xavier • PIX / WhatsApp: +55 21 985692631 (Mercado Pago)",
+                FontSize = 11.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 6, 0, 18)
+                Margin = new Thickness(0, 4, 0, 14)
             });
 
             var dirLabel = new TextBlock
@@ -367,6 +368,26 @@ namespace DrawerInstallerApp
             };
 
             stack.Children.Add(installBtn);
+
+            var warningBox = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 14, 0, 0),
+                Background = new SolidColorBrush(Color.FromArgb(45, 245, 158, 11)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(180, 245, 158, 11)),
+                BorderThickness = new Thickness(1),
+                Child = new TextBlock
+                {
+                    Text = "AVISO: ESTE PROGRAMA FOI TOTALMENTE DESENVOLVIDO POR APENAS RENAN SANTA ROSA XAVIER, E  NÃO ME RESPONSABILIZO POR FORNECIMENTO DESTE PROGRAMA EM SITES DE TERCEIROS, E UM PROGRAMA DE CONDIGO ABERTO E QUALQUER PESSOA PODE TER ACESSO E MANIPULAR OS ARQUIVOS, NÃO BAIXE POR NENHUM LUGAR QUE NÃO SEJA PELO MEU GITHUB OFICIAL.",
+                    FontSize = 10,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(253, 224, 71)),
+                    TextWrapping = TextWrapping.Wrap
+                }
+            };
+            stack.Children.Add(warningBox);
+
             Content = stack;
         }
     }

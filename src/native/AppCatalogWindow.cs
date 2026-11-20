@@ -11,6 +11,18 @@ namespace DrawerNative
 {
     public class AppCatalogWindow : Window
     {
+        public const string AuthorSupportHeaderLine1 =
+            "Caso esse programa tenha lhe ajudado em algo, pense na hipotese de me ajudar também financeiramente para continuar apoiando meus projetos, no pix abaixo, qualquer valor ja ajudaria.";
+        public const string AuthorSupportHeaderLine2 =
+            "Aceito transferencias Via PIX: +55 21 985692631";
+        public const string AuthorSupportHeaderLine3 =
+            "Em nome de: Renan Santa Rosa Xavier - Mercado pago";
+        public const string AuthorSupportHeaderLine4 =
+            "E também aceito contatos via Whatsapp para trabalho ou feedback de melhorias no projeto.";
+
+        public const string AuthorOfficialWarningText =
+            "AVISO: ESTE PROGRAMA FOI TOTALMENTE DESENVOLVIDO POR APENAS RENAN SANTA ROSA XAVIER, E  NÃO ME RESPONSABILIZO POR FORNECIMENTO DESTE PROGRAMA EM SITES DE TERCEIROS, E UM PROGRAMA DE CONDIGO ABERTO E QUALQUER PESSOA PODE TER ACESSO E MANIPULAR OS ARQUIVOS, NÃO BAIXE POR NENHUM LUGAR QUE NÃO SEJA PELO MEU GITHUB OFICIAL.";
+
         private readonly IDrawerAppController _controller;
         private string _selectedDrawerId;
         private List<CatalogEntry> _allCatalogEntries;
@@ -31,11 +43,11 @@ namespace DrawerNative
             _controller = controller;
             _selectedDrawerId = initialDrawerId;
 
-            Title = "Drawer 2.0 — Catálogo Rápido de Apps & Configurações";
-            Width = 760;
-            Height = 650;
-            MinWidth = 680;
-            MinHeight = 560;
+            Title = "Drawer 2.0 — Catálogo Rápido de Apps & Configurações (Por Renan Santa Rosa Xavier)";
+            Width = 860;
+            Height = 760;
+            MinWidth = 760;
+            MinHeight = 650;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = new SolidColorBrush(Color.FromRgb(15, 23, 42));
             Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
@@ -57,19 +69,20 @@ namespace DrawerNative
 
         private void BuildLayout()
         {
-            var rootGrid = new Grid { Margin = new Thickness(18) };
+            var rootGrid = new Grid { Margin = new Thickness(16) };
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            // Header
+            // Header with PIX & WhatsApp Author Support Message
             var headerBorder = new Border
             {
                 CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(16, 12, 16, 12),
-                Margin = new Thickness(0, 0, 0, 14),
+                Margin = new Thickness(0, 0, 0, 12),
                 Background = new SolidColorBrush(Color.FromRgb(30, 41, 59)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(90, 96, 165, 250)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(120, 96, 165, 250)),
                 BorderThickness = new Thickness(1)
             };
 
@@ -77,23 +90,50 @@ namespace DrawerNative
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var titleStack = new StackPanel();
+            var titleStack = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
             titleStack.Children.Add(new TextBlock
             {
-                Text = "Drawer 2.0 — Pods Nativos & Bordas Magnéticas",
-                FontSize = 17,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White
+                Text = AuthorSupportHeaderLine1,
+                FontSize = 12,
+                FontWeight = FontWeights.Medium,
+                Foreground = new SolidColorBrush(Color.FromRgb(226, 232, 240)),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 4)
             });
             titleStack.Children.Add(new TextBlock
             {
-                Text = "Adicione programas com 1 clique, gerencie abas magnéticas nas bordas e configure o sistema (Atalho Global: Ctrl + Shift + D)",
+                Text = AuthorSupportHeaderLine2,
+                FontSize = 13.5,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 2)
+            });
+            titleStack.Children.Add(new TextBlock
+            {
+                Text = AuthorSupportHeaderLine3,
+                FontSize = 12.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            titleStack.Children.Add(new TextBlock
+            {
+                Text = AuthorSupportHeaderLine4,
                 FontSize = 11.5,
+                FontWeight = FontWeights.Medium,
                 Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
-                Margin = new Thickness(0, 3, 0, 0)
+                TextWrapping = TextWrapping.Wrap
             });
 
+            var actionsStack = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
             var newDrawerBtn = CreateStyledButton("+ Nova Gaveta", Color.FromRgb(37, 99, 235));
+            newDrawerBtn.Margin = new Thickness(0, 0, 0, 6);
             newDrawerBtn.Click += delegate
             {
                 DrawerModel created = _controller.CreateNewDrawer();
@@ -105,17 +145,33 @@ namespace DrawerNative
                 }
             };
 
+            var copyPixBtn = CreateStyledButton("📋 Copiar PIX", Color.FromRgb(16, 185, 129));
+            copyPixBtn.FontSize = 11.5;
+            copyPixBtn.Padding = new Thickness(12, 6, 12, 6);
+            copyPixBtn.Click += delegate
+            {
+                try
+                {
+                    Clipboard.SetText("+55 21 985692631");
+                    ShowStatus("Chave PIX (+55 21 985692631 — Renan Santa Rosa Xavier) copiada!");
+                }
+                catch { }
+            };
+
+            actionsStack.Children.Add(newDrawerBtn);
+            actionsStack.Children.Add(copyPixBtn);
+
             Grid.SetColumn(titleStack, 0);
-            Grid.SetColumn(newDrawerBtn, 1);
+            Grid.SetColumn(actionsStack, 1);
             headerGrid.Children.Add(titleStack);
-            headerGrid.Children.Add(newDrawerBtn);
+            headerGrid.Children.Add(actionsStack);
             headerBorder.Child = headerGrid;
 
             // Main Two-Column Content
             var mainCols = new Grid();
-            mainCols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.25, GridUnitType.Star) });
+            mainCols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
             mainCols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
-            mainCols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            mainCols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.05, GridUnitType.Star) });
 
             Border leftCard = BuildCatalogPanel();
             Border rightCard = BuildSettingsAndDrawersPanel();
@@ -131,17 +187,48 @@ namespace DrawerNative
                 Text = "Dica: Arraste qualquer Pod até a borda do monitor para transformá-lo em uma Aba Magnética sempre acessível!",
                 FontSize = 11.5,
                 Foreground = new SolidColorBrush(Color.FromRgb(147, 197, 253)),
-                Margin = new Thickness(4, 12, 4, 0)
+                Margin = new Thickness(4, 8, 4, 6)
             };
+
+            // Official Open-Source Security & Authorship Warning Banner at Bottom
+            Border bottomWarningCard = CreateOfficialWarningBanner(new Thickness(0));
 
             Grid.SetRow(headerBorder, 0);
             Grid.SetRow(mainCols, 1);
             Grid.SetRow(_statusBanner, 2);
+            Grid.SetRow(bottomWarningCard, 3);
             rootGrid.Children.Add(headerBorder);
             rootGrid.Children.Add(mainCols);
             rootGrid.Children.Add(_statusBanner);
+            rootGrid.Children.Add(bottomWarningCard);
 
             Content = rootGrid;
+        }
+
+        private static Border CreateOfficialWarningBanner(Thickness margin)
+        {
+            var warningBorder = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(12, 9, 12, 9),
+                Margin = margin,
+                Background = new SolidColorBrush(Color.FromArgb(45, 245, 158, 11)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(180, 245, 158, 11)),
+                BorderThickness = new Thickness(1.2)
+            };
+
+            var warningText = new TextBlock
+            {
+                Text = AuthorOfficialWarningText,
+                FontSize = 10.8,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(253, 224, 71)),
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Left
+            };
+
+            warningBorder.Child = warningText;
+            return warningBorder;
         }
 
         private Border BuildCatalogPanel()
@@ -395,6 +482,8 @@ namespace DrawerNative
 
             _drawersListPanel = new StackPanel();
             stack.Children.Add(_drawersListPanel);
+
+            stack.Children.Add(CreateOfficialWarningBanner(new Thickness(0, 12, 0, 0)));
 
             scroll.Content = stack;
             card.Child = scroll;

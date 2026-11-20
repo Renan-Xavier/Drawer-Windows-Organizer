@@ -262,7 +262,7 @@ namespace DrawerNative
 
             if (!isSmokeTest)
             {
-                string exePath = Process.GetCurrentProcess().MainModule.FileName;
+                string exePath = EnsurePersistentLocalInstallationPath();
                 StartupRegistryManager.SyncStartup(st.settings.launchAtStartup, exePath);
                 InitializeTrayIcon();
                 InitializeGlobalHotkeyWindow();
@@ -273,6 +273,35 @@ namespace DrawerNative
             {
                 _layerTimer.Start();
             }
+        }
+
+        private static string EnsurePersistentLocalInstallationPath()
+        {
+            string currentExe = Process.GetCurrentProcess().MainModule.FileName;
+            try
+            {
+                string standardDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Programs",
+                    "Drawer");
+                string standardExe = Path.Combine(standardDir, "Drawer.exe");
+
+                if (!string.Equals(
+                    Path.GetFullPath(currentExe),
+                    Path.GetFullPath(standardExe),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.CreateDirectory(standardDir);
+                    File.Copy(currentExe, standardExe, true);
+                }
+
+                if (File.Exists(standardExe))
+                {
+                    return standardExe;
+                }
+            }
+            catch { }
+            return currentExe;
         }
 
         public int ActivePodCount
@@ -709,7 +738,7 @@ namespace DrawerNative
                 st.settings.launchAtStartup = launchAtStartup.Value;
                 try
                 {
-                    string exePath = Process.GetCurrentProcess().MainModule.FileName;
+                    string exePath = EnsurePersistentLocalInstallationPath();
                     StartupRegistryManager.SyncStartup(launchAtStartup.Value, exePath);
                 }
                 catch { }
@@ -914,10 +943,16 @@ namespace DrawerNative
                 try { Directory.Delete(cycleRoot, true); } catch { }
                 bool dragDropInOutCycleOk = step1In && step2Out && step3BackIn;
 
+                bool authorCreditsAndDefaultStartupOk =
+                    new DrawerSettings().launchAtStartup &&
+                    AppCatalogWindow.AuthorSupportHeaderLine2.Contains("+55 21 985692631") &&
+                    AppCatalogWindow.AuthorSupportHeaderLine3.Contains("Renan Santa Rosa Xavier - Mercado pago") &&
+                    AppCatalogWindow.AuthorOfficialWarningText.Contains("AVISO: ESTE PROGRAMA FOI TOTALMENTE DESENVOLVIDO POR APENAS RENAN SANTA ROSA XAVIER");
+
                 bool allOk = geometryOk && magneticDockOk && startupRegistryOk && shortcutResolverOk &&
                              iconExtractionOk && catalogScannerOk && labelSizingOk &&
                              noLabelPanelOverlapOk && compactPanelPaddingOk && desktopIconPositionerOk &&
-                             dragDropInOutCycleOk;
+                             dragDropInOutCycleOk && authorCreditsAndDefaultStartupOk;
                 var result = new Dictionary<string, object>
                 {
                     { "ok", allOk },
@@ -931,7 +966,8 @@ namespace DrawerNative
                     { "noLabelPanelOverlapOk", noLabelPanelOverlapOk },
                     { "compactPanelPaddingOk", compactPanelPaddingOk },
                     { "desktopIconPositionerOk", desktopIconPositionerOk },
-                    { "dragDropInOutCycleOk", dragDropInOutCycleOk }
+                    { "dragDropInOutCycleOk", dragDropInOutCycleOk },
+                    { "authorCreditsAndDefaultStartupOk", authorCreditsAndDefaultStartupOk }
                 };
                 Console.Out.WriteLine(serializer.Serialize(result));
                 return allOk ? 0 : 1;
