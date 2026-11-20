@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -43,11 +44,11 @@ namespace DrawerNative
             _controller = controller;
             _selectedDrawerId = initialDrawerId;
 
-            Title = "Drawer 2.0 — Catálogo Rápido de Apps & Configurações (Por Renan Santa Rosa Xavier)";
-            Width = 860;
-            Height = 760;
-            MinWidth = 760;
-            MinHeight = 650;
+            Title = "Configurações";
+            Width = 880;
+            Height = 770;
+            MinWidth = 780;
+            MinHeight = 660;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = new SolidColorBrush(Color.FromRgb(15, 23, 42));
             Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252));
@@ -56,6 +57,82 @@ namespace DrawerNative
             BuildLayout();
             LoadCatalogData();
             RefreshUI();
+        }
+
+        public static BitmapSource LoadEmbeddedPixQrCodeImage()
+        {
+            try
+            {
+                Assembly asm = Assembly.GetExecutingAssembly();
+                using (Stream s = asm.GetManifestResourceStream("pix-qrcode.png"))
+                {
+                    if (s == null) return null;
+                    var bi = new BitmapImage();
+                    bi.BeginInit();
+                    bi.CacheOption = BitmapCacheOption.OnLoad;
+                    bi.StreamSource = s;
+                    bi.EndInit();
+                    bi.Freeze();
+                    return bi;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void ShowPixQrCodeZoomWindow(BitmapSource qrSource)
+        {
+            if (qrSource == null) return;
+            var zoomWin = new Window
+            {
+                Title = "QR Code PIX — Renan Santa Rosa Xavier",
+                Width = 360,
+                Height = 420,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = new SolidColorBrush(Color.FromRgb(15, 23, 42)),
+                Foreground = Brushes.White
+            };
+
+            var stack = new StackPanel
+            {
+                Margin = new Thickness(20),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var qrCard = new Border
+            {
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(10),
+                Background = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = new Image
+                {
+                    Source = qrSource,
+                    Width = 260,
+                    Height = 260,
+                    Stretch = Stretch.Uniform
+                }
+            };
+            RenderOptions.SetBitmapScalingMode(qrCard.Child, BitmapScalingMode.HighQuality);
+            stack.Children.Add(qrCard);
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "PIX: +55 21 985692631\nRenan Santa Rosa Xavier - Mercado pago",
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 12, 0, 0)
+            });
+
+            zoomWin.Content = stack;
+            zoomWin.ShowDialog();
         }
 
         public void SelectDrawer(string drawerId)
@@ -89,8 +166,13 @@ namespace DrawerNative
             var headerGrid = new Grid();
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var titleStack = new StackPanel { Margin = new Thickness(0, 0, 14, 0) };
+            var titleStack = new StackPanel
+            {
+                Margin = new Thickness(0, 0, 14, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
             titleStack.Children.Add(new TextBlock
             {
                 Text = AuthorSupportHeaderLine1,
@@ -127,6 +209,44 @@ namespace DrawerNative
                 TextWrapping = TextWrapping.Wrap
             });
 
+            // Embedded PIX QR Code Card
+            var qrContainer = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 14, 0)
+            };
+
+            BitmapSource qrBitmap = LoadEmbeddedPixQrCodeImage();
+            if (qrBitmap != null)
+            {
+                var qrImage = new Image
+                {
+                    Source = qrBitmap,
+                    Width = 94,
+                    Height = 94,
+                    Stretch = Stretch.Uniform
+                };
+                RenderOptions.SetBitmapScalingMode(qrImage, BitmapScalingMode.HighQuality);
+
+                var qrBorder = new Border
+                {
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(5),
+                    Background = Brushes.White,
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
+                    BorderThickness = new Thickness(1.5),
+                    Cursor = Cursors.Hand,
+                    ToolTip = "QR Code PIX — Clique para ampliar",
+                    Child = qrImage
+                };
+                qrBorder.MouseLeftButtonUp += delegate
+                {
+                    ShowPixQrCodeZoomWindow(qrBitmap);
+                };
+                qrContainer.Children.Add(qrBorder);
+            }
+
             var actionsStack = new StackPanel
             {
                 VerticalAlignment = VerticalAlignment.Center
@@ -162,8 +282,10 @@ namespace DrawerNative
             actionsStack.Children.Add(copyPixBtn);
 
             Grid.SetColumn(titleStack, 0);
-            Grid.SetColumn(actionsStack, 1);
+            Grid.SetColumn(qrContainer, 1);
+            Grid.SetColumn(actionsStack, 2);
             headerGrid.Children.Add(titleStack);
+            headerGrid.Children.Add(qrContainer);
             headerGrid.Children.Add(actionsStack);
             headerBorder.Child = headerGrid;
 
@@ -307,7 +429,7 @@ namespace DrawerNative
             {
                 LoadCatalogData();
                 RenderCatalogItems();
-                ShowStatus("Catálogo de programas atualizado.");
+                ShowStatus("Lista de programas atualizada.");
             };
 
             filterRow.Children.Add(btnAll);

@@ -1096,7 +1096,7 @@ namespace DrawerNative
                     BorderBrush = new SolidColorBrush(Color.FromArgb(120, 96, 165, 250)),
                     BorderThickness = new Thickness(1.5),
                     Cursor = Cursors.Hand,
-                    ToolTip = "Clique para abrir o Catálogo Rápido de Apps ou arraste atalhos para cá"
+                    ToolTip = "Clique para abrir as Configurações ou arraste atalhos para cá"
                 };
 
                 var stack = new StackPanel

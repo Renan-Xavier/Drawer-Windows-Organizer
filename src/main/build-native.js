@@ -31,6 +31,7 @@ function buildNativeTargets({ force = false } = {}) {
   fs.mkdirSync(DIST_DIR, { recursive: true });
 
   const { icoPath } = ensureAppIcons(ASSETS_DIR);
+  const pixQrPath = path.join(ASSETS_DIR, 'pix-qrcode.png');
 
   const drawerSources = [
     path.join(NATIVE_DIR, 'DrawerCore.cs'),
@@ -48,7 +49,7 @@ function buildNativeTargets({ force = false } = {}) {
   if (
     !force &&
     isUpToDate(
-      [...drawerSources, installerSource],
+      [...drawerSources, installerSource, pixQrPath],
       [distDrawerExe, helperExe, installerExe]
     )
   ) {
@@ -65,6 +66,10 @@ function buildNativeTargets({ force = false } = {}) {
     `/r:${path.join(NET_DIR, 'System.Web.Extensions.dll')}`,
   ];
 
+  const resourceArgs = fs.existsSync(pixQrPath)
+    ? [`/resource:${pixQrPath},pix-qrcode.png`]
+    : [];
+
   console.log('[build:native] Compilando Drawer 2.0 Nativo (C# / WPF DirectX)...');
   execFileSync(
     CSC_PATH,
@@ -74,6 +79,7 @@ function buildNativeTargets({ force = false } = {}) {
       '/optimize+',
       `/win32icon:${icoPath}`,
       `/out:${distDrawerExe}`,
+      ...resourceArgs,
       ...refs,
       ...drawerSources,
     ],
@@ -88,6 +94,7 @@ function buildNativeTargets({ force = false } = {}) {
       '/optimize+',
       `/win32icon:${icoPath}`,
       `/out:${helperExe}`,
+      ...resourceArgs,
       ...refs,
       ...drawerSources,
     ],

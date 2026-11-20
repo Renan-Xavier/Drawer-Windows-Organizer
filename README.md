@@ -24,6 +24,10 @@ Caso esse programa tenha lhe ajudado em algo, pense na hipótese de me ajudar ta
 * **Em nome de:** `Renan Santa Rosa Xavier - Mercado pago`
 * **Contato:** E também aceito contatos via **WhatsApp (`+55 21 985692631`)** para trabalho ou feedback de melhorias no projeto.
 
+<p align="center">
+  <img src="assets/pix-qrcode.png" alt="QR Code PIX - Renan Santa Rosa Xavier" width="220" />
+</p>
+
 ---
 
 ## 📌 Visão Geral
@@ -66,7 +70,7 @@ flowchart TD
     subgraph NativeApp ["Drawer.exe — Aplicação 100% Nativa C# / WPF (.NET 4.8)"]
         App["DrawerApp.cs\nOrquestrador, Bandeja do Sistema (Tray) & Atalho Global (Ctrl+Shift+D)"]
         Pod["DrawerPodWindow.cs\nMicro-Janelas WPF Independentes, Autoajuste Geométrico & Abas Magnéticas de Borda"]
-        Catalog["AppCatalogWindow.cs\nCatálogo Rápido (Desktop + Menu Iniciar) & Configurações"]
+        Catalog["AppCatalogWindow.cs\nConfigurações"]
         Core["DrawerCore.cs\nGeometria 1x1..4xN, Snap Magnético, Vault Seguro & Registro HKCU\\Run"]
         Shell["Win32ShellService.cs\nIContextMenu3 Nativo, ShellExecuteExW, IShellLinkW & IShellItemImageFactory 128px"]
     end

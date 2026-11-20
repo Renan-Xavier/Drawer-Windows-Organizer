@@ -1324,8 +1324,6 @@ namespace DrawerNative
                 uint pos = 0;
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(1),
                     isPinned ? "Desafixar e Fechar Gaveta" : "Fixar Gaveta Aberta (Pin)");
-                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(2),
-                    "+ Catálogo Rápido de Apps (Desktop & Menu Iniciar)...");
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(3),
                     "+ Escolher Arquivo ou Atalho (.lnk / .url / .exe)...");
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(4),
@@ -1338,8 +1336,8 @@ namespace DrawerNative
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_SEPARATOR, UIntPtr.Zero, null);
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(5),
                     "+ Criar Nova Gaveta");
-                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(6),
-                    "Configurações do Drawer...");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(2),
+                    "Configurações");
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_SEPARATOR, UIntPtr.Zero, null);
                 InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(7),
                     "Excluir Gaveta (Devolver ícones ao Desktop)");

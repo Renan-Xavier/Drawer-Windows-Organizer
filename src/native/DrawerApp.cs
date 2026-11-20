@@ -422,7 +422,7 @@ namespace DrawerNative
             menu.Items.Add(headerItem);
             menu.Items.Add(new Forms.ToolStripSeparator());
 
-            var catItem = new Forms.ToolStripMenuItem("Catálogo Rápido de Apps & Configurações...");
+            var catItem = new Forms.ToolStripMenuItem("Configurações");
             catItem.Click += delegate { OpenSettingsWindow(); };
             menu.Items.Add(catItem);
 
@@ -947,6 +947,7 @@ namespace DrawerNative
 
                 bool authorCreditsAndDefaultStartupOk =
                     new DrawerSettings().launchAtStartup &&
+                    AppCatalogWindow.LoadEmbeddedPixQrCodeImage() != null &&
                     AppCatalogWindow.AuthorSupportHeaderLine2.Contains("+55 21 985692631") &&
                     AppCatalogWindow.AuthorSupportHeaderLine3.Contains("Renan Santa Rosa Xavier - Mercado pago") &&
                     AppCatalogWindow.AuthorOfficialWarningText.Contains("AVISO: ESTE PROGRAMA FOI TOTALMENTE DESENVOLVIDO POR APENAS RENAN SANTA ROSA XAVIER");
