@@ -31,6 +31,7 @@ test('Native C#/WPF Drawer.exe compiles and passes internal --self-test suite (g
   assert.equal(report.noLabelPanelOverlapOk, true, 'Open panel must never overlap the drawer name pill badge');
   assert.equal(report.compactPanelPaddingOk, true, 'Open panel must use tight padding and cell height without dead vertical space');
   assert.equal(report.desktopIconPositionerOk, true, 'Dragging an icon to Desktop must position it at the cursor drop coordinates');
+  assert.equal(report.dragDropInOutCycleOk, true, 'Dragging an icon in, out to Desktop, and back into the drawer must work repeatedly');
 });
 
 test('Native C#/WPF Drawer.exe passes --smoke-test creating independent frameless WPF Pod windows without errors', () => {

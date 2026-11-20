@@ -956,14 +956,22 @@ namespace DrawerNative
                 File.Exists(filePath) &&
                 IsInsideDirectory(filePath, _desktopDir))
             {
-                string itemVaultDir = Path.Combine(_vaultRootDir, drawer.id);
-                Directory.CreateDirectory(itemVaultDir);
-                string destPath = Path.Combine(itemVaultDir, Path.GetFileName(filePath));
-                MoveFileSafe(filePath, destPath);
-                finalTargetPath = destPath;
-                originalDesktopPath = filePath;
-                vaulted = true;
-                Win32ShellService.NotifyDesktopFileRestored(_desktopDir);
+                try
+                {
+                    string itemVaultDir = Path.Combine(_vaultRootDir, drawer.id);
+                    Directory.CreateDirectory(itemVaultDir);
+                    string destPath = Path.Combine(itemVaultDir, Path.GetFileName(filePath));
+                    MoveFileSafe(filePath, destPath);
+                    finalTargetPath = destPath;
+                    originalDesktopPath = filePath;
+                    vaulted = true;
+                    Win32ShellService.NotifyDesktopFileRestored(_desktopDir);
+                }
+                catch
+                {
+                    finalTargetPath = filePath;
+                    vaulted = false;
+                }
             }
 
             var newItem = new DrawerItem

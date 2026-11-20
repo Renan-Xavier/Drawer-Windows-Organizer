@@ -735,9 +735,34 @@ namespace DrawerNative
                 MethodInfo posMethod = typeof(Win32ShellService).GetMethod("PositionDesktopIconAtScreenPoint");
                 bool desktopIconPositionerOk = (posMethod != null);
 
+                // 7. Drag In -> Drag Out to Desktop -> Drag Back In cycle test
+                string cycleRoot = Path.Combine(Path.GetTempPath(), "drawer-cycle-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+                string cycleStorage = Path.Combine(cycleRoot, "appdata");
+                string cycleDesktop = Path.Combine(cycleRoot, "Desktop");
+                Directory.CreateDirectory(cycleDesktop);
+                string poeShortcut = Path.Combine(cycleDesktop, "Path of Exile.url");
+                File.WriteAllText(poeShortcut, "[InternetShortcut]\r\nURL=steam://rungameid/238960\r\n");
+
+                var cycleStore = new DrawerStateStore(cycleStorage, cycleDesktop);
+                DrawerAppState cycleState = cycleStore.Load();
+                string targetDrawerId = cycleState.drawers[0].id;
+
+                DrawerItem added1 = cycleStore.AddItemToDrawer(targetDrawerId, poeShortcut, null);
+                bool step1In = (added1 != null) && !File.Exists(poeShortcut) && File.Exists(added1.targetPath);
+
+                string restoredPath = cycleStore.MoveItemToDesktop(targetDrawerId, added1.id);
+                bool step2Out = (restoredPath == poeShortcut) && File.Exists(poeShortcut) && (cycleStore.GetDrawer(targetDrawerId).items.Count == 0);
+
+                DrawerItem added2 = cycleStore.AddItemToDrawer(targetDrawerId, poeShortcut, null);
+                bool step3BackIn = (added2 != null) && !File.Exists(poeShortcut) && File.Exists(added2.targetPath) && (cycleStore.GetDrawer(targetDrawerId).items.Count == 1);
+
+                try { Directory.Delete(cycleRoot, true); } catch { }
+                bool dragDropInOutCycleOk = step1In && step2Out && step3BackIn;
+
                 bool allOk = geometryOk && magneticDockOk && startupRegistryOk && shortcutResolverOk &&
                              iconExtractionOk && catalogScannerOk && labelSizingOk &&
-                             noLabelPanelOverlapOk && compactPanelPaddingOk && desktopIconPositionerOk;
+                             noLabelPanelOverlapOk && compactPanelPaddingOk && desktopIconPositionerOk &&
+                             dragDropInOutCycleOk;
                 var result = new Dictionary<string, object>
                 {
                     { "ok", allOk },
@@ -750,7 +775,8 @@ namespace DrawerNative
                     { "labelSizingOk", labelSizingOk },
                     { "noLabelPanelOverlapOk", noLabelPanelOverlapOk },
                     { "compactPanelPaddingOk", compactPanelPaddingOk },
-                    { "desktopIconPositionerOk", desktopIconPositionerOk }
+                    { "desktopIconPositionerOk", desktopIconPositionerOk },
+                    { "dragDropInOutCycleOk", dragDropInOutCycleOk }
                 };
                 Console.Out.WriteLine(serializer.Serialize(result));
                 return allOk ? 0 : 1;
@@ -867,6 +893,30 @@ namespace DrawerNative
                     Win32ShellService.NotifyDesktopFileRestored(args[1]);
                     return 0;
                 }
+            }
+
+            // CRITICAL FOR WINDOWS DRAG & DROP:
+            // If Drawer.exe was launched from an elevated (Administrator) process while Windows Explorer (Desktop)
+            // runs at Medium Integrity, re-launch using explorer.exe's Medium-Integrity token so UIPI never blocks Drag & Drop!
+            bool alreadyDeElevated = false;
+            if (args != null)
+            {
+                foreach (string a in args)
+                {
+                    if (a == "--unelevated") alreadyDeElevated = true;
+                }
+            }
+            if (!alreadyDeElevated && Win32ShellService.IsCurrentProcessElevated())
+            {
+                try
+                {
+                    string exePath = Process.GetCurrentProcess().MainModule.FileName;
+                    if (Win32ShellService.TryRelaunchUnelevatedViaExplorer(exePath, "--unelevated"))
+                    {
+                        return 0;
+                    }
+                }
+                catch { }
             }
 
             bool createdNew;

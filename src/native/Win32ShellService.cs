@@ -77,11 +77,16 @@ namespace DrawerNative
         public const int WM_MOUSEACTIVATE = 0x0021;
         public const int MA_NOACTIVATE = 3;
         public const int WM_WINDOWPOSCHANGING = 0x0046;
+        public const int WM_COPYGLOBALDATA = 0x0049;
+        public const int WM_COPYDATA = 0x004A;
+        public const int WM_DROPFILES = 0x0233;
         private const int WM_INITMENUPOPUP = 0x0117;
         private const int WM_DRAWITEM = 0x002B;
         private const int WM_MEASUREITEM = 0x002C;
         private const int WM_MENUCHAR = 0x0120;
         public const int WM_HOTKEY = 0x0312;
+
+        private const uint MSGFLT_ALLOW = 1;
 
         public const uint MOD_ALT = 0x0001;
         public const uint MOD_CONTROL = 0x0002;
@@ -165,6 +170,77 @@ namespace DrawerNative
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool ChangeWindowMessageFilterEx(IntPtr hWnd, uint msg, uint action, IntPtr changeFilterStruct);
+
+        [DllImport("shell32.dll")]
+        private static extern void DragAcceptFiles(IntPtr hWnd, bool fAccept);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "DragQueryFileW")]
+        private static extern uint DragQueryFile(IntPtr hDrop, uint iFile, StringBuilder lpszFile, uint cch);
+
+        [DllImport("shell32.dll")]
+        private static extern void DragFinish(IntPtr hDrop);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass, out int TokenInformation, int TokenInformationLength, out int ReturnLength);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool DuplicateTokenEx(
+            IntPtr hExistingToken,
+            uint dwDesiredAccess,
+            IntPtr lpTokenAttributes,
+            int ImpersonationLevel,
+            int TokenType,
+            out IntPtr phNewToken);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CreateProcessWithTokenW(
+            IntPtr hToken,
+            uint dwLogonFlags,
+            string lpApplicationName,
+            string lpCommandLine,
+            uint dwCreationFlags,
+            IntPtr lpEnvironment,
+            string lpCurrentDirectory,
+            ref STARTUPINFO lpStartupInfo,
+            out PROCESS_INFORMATION lpProcessInformation);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct STARTUPINFO
+        {
+            public int cb;
+            public string lpReserved;
+            public string lpDesktop;
+            public string lpTitle;
+            public int dwX;
+            public int dwY;
+            public int dwXSize;
+            public int dwYSize;
+            public int dwXCountChars;
+            public int dwYCountChars;
+            public int dwFillAttribute;
+            public int dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
+        }
 
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -1386,6 +1462,170 @@ namespace DrawerNative
             if (exStyle != desiredEx)
             {
                 SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(desiredEx));
+            }
+        }
+
+        public static void EnableNativeFileDropOnWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return;
+            try
+            {
+                ChangeWindowMessageFilterEx(hwnd, (uint)WM_DROPFILES, MSGFLT_ALLOW, IntPtr.Zero);
+                ChangeWindowMessageFilterEx(hwnd, (uint)WM_COPYDATA, MSGFLT_ALLOW, IntPtr.Zero);
+                ChangeWindowMessageFilterEx(hwnd, (uint)WM_COPYGLOBALDATA, MSGFLT_ALLOW, IntPtr.Zero);
+                DragAcceptFiles(hwnd, true);
+            }
+            catch { }
+        }
+
+        public static string[] ExtractDroppedFilesFromHDrop(IntPtr hDrop)
+        {
+            if (hDrop == IntPtr.Zero) return new string[0];
+            try
+            {
+                uint count = DragQueryFile(hDrop, 0xFFFFFFFF, null, 0);
+                if (count == 0) return new string[0];
+                var list = new System.Collections.Generic.List<string>();
+                var sb = new StringBuilder(1024);
+                for (uint i = 0; i < count; i++)
+                {
+                    sb.Clear();
+                    if (DragQueryFile(hDrop, i, sb, (uint)sb.Capacity) > 0)
+                    {
+                        string fp = sb.ToString();
+                        if (!string.IsNullOrWhiteSpace(fp))
+                        {
+                            list.Add(fp);
+                        }
+                    }
+                }
+                return list.ToArray();
+            }
+            catch
+            {
+                return new string[0];
+            }
+            finally
+            {
+                try { DragFinish(hDrop); } catch { }
+            }
+        }
+
+        public static bool IsProcessElevated(IntPtr processHandle)
+        {
+            IntPtr hToken = IntPtr.Zero;
+            try
+            {
+                if (!OpenProcessToken(processHandle, 0x0008 /* TOKEN_QUERY */, out hToken))
+                    return false;
+                int elevation = 0;
+                int retLen = 0;
+                if (!GetTokenInformation(hToken, 20 /* TokenElevation */, out elevation, sizeof(int), out retLen))
+                    return false;
+                return elevation != 0;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (hToken != IntPtr.Zero) CloseHandle(hToken);
+            }
+        }
+
+        public static bool IsCurrentProcessElevated()
+        {
+            return IsProcessElevated(Process.GetCurrentProcess().Handle);
+        }
+
+        /// <summary>
+        /// If Drawer.exe was launched from an elevated (Administrator) process while Windows Explorer (Desktop)
+        /// runs at Medium Integrity, re-launches Drawer.exe using explorer.exe's Medium-Integrity token so
+        /// Windows UIPI never blocks OLE Drag & Drop from the Desktop into Drawer Pods!
+        /// </summary>
+        public static bool TryRelaunchUnelevatedViaExplorer(string exePath, string arguments)
+        {
+            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
+            if (!IsCurrentProcessElevated()) return false;
+
+            IntPtr hExplorerProc = IntPtr.Zero;
+            IntPtr hExplorerToken = IntPtr.Zero;
+            IntPtr hPrimaryToken = IntPtr.Zero;
+
+            try
+            {
+                Process[] explorers = Process.GetProcessesByName("explorer");
+                Process targetExplorer = null;
+                foreach (Process p in explorers)
+                {
+                    try
+                    {
+                        if (!IsProcessElevated(p.Handle))
+                        {
+                            targetExplorer = p;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (targetExplorer == null) return false;
+
+                hExplorerProc = OpenProcess(0x0400 /* PROCESS_QUERY_INFORMATION */, false, (uint)targetExplorer.Id);
+                if (hExplorerProc == IntPtr.Zero) return false;
+
+                if (!OpenProcessToken(hExplorerProc, 0x0002 /* TOKEN_DUPLICATE */, out hExplorerToken))
+                    return false;
+
+                const uint MAXIMUM_ALLOWED = 0x02000000;
+                if (!DuplicateTokenEx(
+                    hExplorerToken,
+                    MAXIMUM_ALLOWED,
+                    IntPtr.Zero,
+                    2 /* SecurityImpersonation */,
+                    1 /* TokenPrimary */,
+                    out hPrimaryToken))
+                {
+                    return false;
+                }
+
+                var si = new STARTUPINFO();
+                si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+                PROCESS_INFORMATION pi;
+
+                string cmdLine = string.IsNullOrWhiteSpace(arguments)
+                    ? string.Format("\"{0}\"", exePath)
+                    : string.Format("\"{0}\" {1}", exePath, arguments);
+
+                bool ok = CreateProcessWithTokenW(
+                    hPrimaryToken,
+                    0,
+                    exePath,
+                    cmdLine,
+                    0,
+                    IntPtr.Zero,
+                    Path.GetDirectoryName(exePath),
+                    ref si,
+                    out pi);
+
+                if (ok)
+                {
+                    if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
+                    if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
+                    return true;
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (hPrimaryToken != IntPtr.Zero) CloseHandle(hPrimaryToken);
+                if (hExplorerToken != IntPtr.Zero) CloseHandle(hExplorerToken);
+                if (hExplorerProc != IntPtr.Zero) CloseHandle(hExplorerProc);
             }
         }
 

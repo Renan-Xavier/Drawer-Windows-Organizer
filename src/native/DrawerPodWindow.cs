@@ -99,7 +99,8 @@ namespace DrawerNative
 
             _rootCanvas = new Canvas
             {
-                Background = Brushes.Transparent,
+                Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)),
+                AllowDrop = true,
                 ClipToBounds = false
             };
 
@@ -108,19 +109,22 @@ namespace DrawerNative
             {
                 CornerRadius = new CornerRadius(0, 12, 12, 0),
                 Cursor = Cursors.Hand,
+                AllowDrop = true,
                 Visibility = Visibility.Collapsed
             };
 
             // 2. Drawer Handle (Discord-style rounded square with 2x2 icon preview)
             _handleContainer = new Border
             {
-                Background = Brushes.Transparent,
+                Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)),
+                AllowDrop = true,
                 Cursor = Cursors.Hand
             };
 
             _handleVisual = new Border
             {
                 BorderThickness = new Thickness(1.5),
+                AllowDrop = true,
                 Effect = new DropShadowEffect
                 {
                     Color = Colors.Black,
@@ -203,6 +207,7 @@ namespace DrawerNative
             _panelBorder = new Border
             {
                 BorderThickness = new Thickness(1.5),
+                AllowDrop = true,
                 RenderTransform = _panelScale,
                 RenderTransformOrigin = new Point(0, 0),
                 Visibility = Visibility.Collapsed,
@@ -215,7 +220,11 @@ namespace DrawerNative
                 }
             };
 
-            _itemsCanvas = new Canvas();
+            _itemsCanvas = new Canvas
+            {
+                Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)),
+                AllowDrop = true
+            };
             _panelBorder.Child = _itemsCanvas;
 
             _rootCanvas.Children.Add(_panelBorder);
@@ -250,6 +259,7 @@ namespace DrawerNative
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             Win32ShellService.ConfigurePodToolWindowStyle(hwnd);
+            Win32ShellService.EnableNativeFileDropOnWindow(hwnd);
             HwndSource src = HwndSource.FromHwnd(hwnd);
             if (src != null)
             {
@@ -261,6 +271,18 @@ namespace DrawerNative
 
         private IntPtr PodWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
+            if (msg == Win32ShellService.WM_DROPFILES)
+            {
+                handled = true;
+                string[] droppedFiles = Win32ShellService.ExtractDroppedFilesFromHDrop(wParam);
+                if (droppedFiles != null && droppedFiles.Length > 0)
+                {
+                    _hoverCloseTimer.Stop();
+                    _isOpen = true;
+                    _controller.AddFilesToDrawer(_drawer.id, droppedFiles);
+                }
+                return IntPtr.Zero;
+            }
             if (msg == Win32ShellService.WM_MOUSEACTIVATE)
             {
                 if (!ShouldBeTopmost && _inlineRenameBox.Visibility != Visibility.Visible)
@@ -570,9 +592,16 @@ namespace DrawerNative
 
         private void OnPodDragOver(object sender, DragEventArgs e)
         {
+            _hoverCloseTimer.Stop();
             if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent("DrawerItemDrag"))
             {
-                e.Effects = DragDropEffects.Move | DragDropEffects.Copy;
+                if ((e.AllowedEffects & DragDropEffects.Copy) != 0)
+                    e.Effects = DragDropEffects.Copy;
+                else if ((e.AllowedEffects & DragDropEffects.Move) != 0)
+                    e.Effects = DragDropEffects.Move;
+                else
+                    e.Effects = DragDropEffects.Link;
+
                 if (!_isOpen)
                 {
                     _isOpen = true;
@@ -589,6 +618,7 @@ namespace DrawerNative
         private void OnPodDrop(object sender, DragEventArgs e)
         {
             e.Handled = true;
+            _hoverCloseTimer.Stop();
             if (e.Data.GetDataPresent("DrawerItemDrag"))
             {
                 string payload = e.Data.GetData("DrawerItemDrag") as string;
