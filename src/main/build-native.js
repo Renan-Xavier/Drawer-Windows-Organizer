@@ -13,11 +13,47 @@ const CSC_PATH =
 const NET_DIR = 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319';
 const WPF_DIR = path.join(NET_DIR, 'WPF');
 
-function buildNativeTargets() {
+function isUpToDate(sources, outputs) {
+  for (const out of outputs) {
+    if (!fs.existsSync(out)) return false;
+  }
+  const minOutTime = Math.min(
+    ...outputs.map((o) => fs.statSync(o).mtimeMs)
+  );
+  const maxSrcTime = Math.max(
+    ...sources.map((s) => (fs.existsSync(s) ? fs.statSync(s).mtimeMs : 0))
+  );
+  return minOutTime >= maxSrcTime;
+}
+
+function buildNativeTargets({ force = false } = {}) {
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
   fs.mkdirSync(DIST_DIR, { recursive: true });
 
   const { icoPath } = ensureAppIcons(ASSETS_DIR);
+
+  const drawerSources = [
+    path.join(NATIVE_DIR, 'DrawerCore.cs'),
+    path.join(NATIVE_DIR, 'Win32ShellService.cs'),
+    path.join(NATIVE_DIR, 'DrawerPodWindow.cs'),
+    path.join(NATIVE_DIR, 'AppCatalogWindow.cs'),
+    path.join(NATIVE_DIR, 'DrawerApp.cs'),
+  ];
+  const installerSource = path.join(NATIVE_DIR, 'DrawerInstaller.cs');
+
+  const distDrawerExe = path.join(DIST_DIR, 'Drawer.exe');
+  const helperExe = path.join(ASSETS_DIR, 'win32-helper.exe');
+  const installerExe = path.join(DIST_DIR, 'Drawer-Setup-2.0.0.exe');
+
+  if (
+    !force &&
+    isUpToDate(
+      [...drawerSources, installerSource],
+      [distDrawerExe, helperExe, installerExe]
+    )
+  ) {
+    return;
+  }
 
   const refs = [
     `/r:${path.join(WPF_DIR, 'PresentationFramework.dll')}`,
@@ -28,17 +64,6 @@ function buildNativeTargets() {
     `/r:${path.join(NET_DIR, 'System.Drawing.dll')}`,
     `/r:${path.join(NET_DIR, 'System.Web.Extensions.dll')}`,
   ];
-
-  const drawerSources = [
-    path.join(NATIVE_DIR, 'DrawerCore.cs'),
-    path.join(NATIVE_DIR, 'Win32ShellService.cs'),
-    path.join(NATIVE_DIR, 'DrawerPodWindow.cs'),
-    path.join(NATIVE_DIR, 'AppCatalogWindow.cs'),
-    path.join(NATIVE_DIR, 'DrawerApp.cs'),
-  ];
-
-  const distDrawerExe = path.join(DIST_DIR, 'Drawer.exe');
-  const helperExe = path.join(ASSETS_DIR, 'win32-helper.exe');
 
   console.log('[build:native] Compilando Drawer 2.0 Nativo (C# / WPF DirectX)...');
   execFileSync(
@@ -55,7 +80,6 @@ function buildNativeTargets() {
     { stdio: 'inherit' }
   );
 
-  // Also compile console-compatible helper binary so CLI stdout commands (extract-icon, --self-test, --smoke-test) work everywhere
   execFileSync(
     CSC_PATH,
     [
@@ -69,13 +93,6 @@ function buildNativeTargets() {
     ],
     { stdio: 'inherit' }
   );
-
-  // Copy console-enabled native executable to dist/Drawer.exe so CLI flags (--self-test / --smoke-test) and GUI both work without a console window when launched via winexe or installer
-  // Wait: if we compile dist/Drawer.exe with /target:winexe, does stdout still work when redirected by execFileSync?
-  // Let's verify! In Windows, /target:winexe STILL writes to redirected stdout pipe when spawned by Node execFileSync, while showing ZERO console window when double-clicked by the user!
-
-  const installerExe = path.join(DIST_DIR, 'Drawer-Setup-2.0.0.exe');
-  const installerSource = path.join(NATIVE_DIR, 'DrawerInstaller.cs');
 
   console.log('[build:native] Compilando Instalador Nativo Auto-Contido (Drawer-Setup-2.0.0.exe)...');
   execFileSync(
@@ -98,7 +115,8 @@ function buildNativeTargets() {
 }
 
 if (require.main === module) {
-  buildNativeTargets();
+  const force = process.argv.includes('--force');
+  buildNativeTargets({ force });
 }
 
 module.exports = { buildNativeTargets };
