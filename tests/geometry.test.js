@@ -2,9 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  SNAP_THRESHOLD_PX,
   getScaleMetrics,
   computeDrawerGrid,
   computeOpenDirection,
+  computeMagneticDock,
+  computeDrawerLayout,
   createInteractionMachine,
 } = require('../src/core/geometry');
 
@@ -176,4 +179,86 @@ test('createInteractionMachine pins open on first click and closes on second cli
     isPinned: false,
     state: 'closed',
   });
+});
+
+test('computeMagneticDock snaps Pod to left, right, or top screen edges within SNAP_THRESHOLD_PX (18px)', () => {
+  assert.equal(SNAP_THRESHOLD_PX, 18);
+
+  const leftSnap = computeMagneticDock({
+    x: 8,
+    y: 220,
+    drawerSize: 64,
+    screenWidth: 1920,
+    screenHeight: 1080,
+  });
+  assert.equal(leftSnap.dockedEdge, 'left');
+  assert.equal(leftSnap.x, 0);
+  assert.equal(leftSnap.y, 220);
+  assert.equal(leftSnap.forcedDirection, 'right');
+
+  const rightSnap = computeMagneticDock({
+    x: 1920 - 64 - 10,
+    y: 300,
+    drawerSize: 64,
+    screenWidth: 1920,
+    screenHeight: 1080,
+  });
+  assert.equal(rightSnap.dockedEdge, 'right');
+  assert.equal(rightSnap.x, 1920 - 64);
+  assert.equal(rightSnap.y, 300);
+  assert.equal(rightSnap.forcedDirection, 'left');
+
+  const topSnap = computeMagneticDock({
+    x: 500,
+    y: 12,
+    drawerSize: 64,
+    screenWidth: 1920,
+    screenHeight: 1080,
+  });
+  assert.equal(topSnap.dockedEdge, 'top');
+  assert.equal(topSnap.x, 500);
+  assert.equal(topSnap.y, 0);
+  assert.equal(topSnap.forcedDirection, 'down');
+
+  const freeDesktop = computeMagneticDock({
+    x: 240,
+    y: 240,
+    drawerSize: 64,
+    screenWidth: 1920,
+    screenHeight: 1080,
+  });
+  assert.equal(freeDesktop.dockedEdge, 'none');
+  assert.equal(freeDesktop.x, 240);
+  assert.equal(freeDesktop.y, 240);
+  assert.equal(freeDesktop.forcedDirection, null);
+});
+
+test('computeDrawerLayout reflects magnetic edge docking and forces inward opening direction', () => {
+  const layoutLeft = computeDrawerLayout(
+    {
+      id: 'd-left',
+      name: 'Borda Esquerda',
+      x: 4,
+      y: 180,
+      preferredDirection: 'left',
+      items: [{ id: '1' }, { id: '2' }],
+    },
+    { isOpen: true, scale: 'medium', screenWidth: 1920, screenHeight: 1080 }
+  );
+  assert.equal(layoutLeft.dockedEdge, 'left');
+  assert.equal(layoutLeft.direction, 'right');
+
+  const layoutRight = computeDrawerLayout(
+    {
+      id: 'd-right',
+      name: 'Borda Direita',
+      x: 1920 - 64 - 5,
+      y: 180,
+      preferredDirection: 'right',
+      items: [{ id: '1' }, { id: '2' }],
+    },
+    { isOpen: true, scale: 'medium', screenWidth: 1920, screenHeight: 1080 }
+  );
+  assert.equal(layoutRight.dockedEdge, 'right');
+  assert.equal(layoutRight.direction, 'left');
 });

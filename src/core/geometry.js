@@ -5,6 +5,8 @@
     root.DrawerGeometry = factory();
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  const SNAP_THRESHOLD_PX = 18;
+
   const SCALE_CONFIGS = {
     small: {
       scale: 'small',
@@ -239,6 +241,59 @@
   }
 
   /**
+   * Computes magnetic edge docking when a Pod is dragged near left, right, or top screen borders.
+   */
+  function computeMagneticDock({
+    x = 40,
+    y = 40,
+    drawerSize = 64,
+    screenWidth = 1920,
+    screenHeight = 1080,
+    snapThreshold = SNAP_THRESHOLD_PX,
+  } = {}) {
+    const labelHeight = 28;
+    const minMargin = 12;
+    const rawX = Number(x) || 0;
+    const rawY = Number(y) || 0;
+    const maxY = Math.max(minMargin, screenHeight - drawerSize - labelHeight);
+    const maxX = Math.max(minMargin, screenWidth - drawerSize - minMargin);
+
+    if (rawX <= snapThreshold) {
+      return {
+        x: 0,
+        y: Math.round(Math.min(Math.max(minMargin, rawY), maxY)),
+        dockedEdge: 'left',
+        forcedDirection: 'right',
+      };
+    }
+
+    if (rawX + drawerSize >= screenWidth - snapThreshold) {
+      return {
+        x: Math.max(0, screenWidth - drawerSize),
+        y: Math.round(Math.min(Math.max(minMargin, rawY), maxY)),
+        dockedEdge: 'right',
+        forcedDirection: 'left',
+      };
+    }
+
+    if (rawY <= snapThreshold) {
+      return {
+        x: Math.round(Math.min(Math.max(minMargin, rawX), maxX)),
+        y: 0,
+        dockedEdge: 'top',
+        forcedDirection: 'down',
+      };
+    }
+
+    return {
+      x: Math.round(Math.min(Math.max(minMargin, rawX), maxX)),
+      y: Math.round(Math.min(Math.max(minMargin, rawY), maxY)),
+      dockedEdge: 'none',
+      forcedDirection: null,
+    };
+  }
+
+  /**
    * Computes full layout, preview items, connected panel bounds, and hit-test bounding box
    * for a single drawer instance.
    */
@@ -256,6 +311,30 @@
     const items = Array.isArray(drawer.items) ? drawer.items : [];
     const previewItems = items.slice(0, 4);
 
+    const dockInfo = computeMagneticDock({
+      x: drawer.x,
+      y: drawer.y,
+      drawerSize: metrics.drawerSize,
+      screenWidth,
+      screenHeight,
+    });
+    const dockedEdge =
+      drawer.dockedEdge && ['left', 'right', 'top', 'none'].includes(drawer.dockedEdge)
+        ? drawer.dockedEdge !== 'none'
+          ? drawer.dockedEdge
+          : dockInfo.dockedEdge
+        : dockInfo.dockedEdge;
+
+    const effectivePreferredDirection =
+      dockInfo.forcedDirection ||
+      (dockedEdge === 'left'
+        ? 'right'
+        : dockedEdge === 'right'
+        ? 'left'
+        : dockedEdge === 'top'
+        ? 'down'
+        : drawer.preferredDirection || 'auto');
+
     const direction = computeOpenDirection({
       x: drawer.x,
       y: drawer.y,
@@ -263,7 +342,7 @@
       scale,
       screenWidth,
       screenHeight,
-      preferredDirection: drawer.preferredDirection || 'auto',
+      preferredDirection: effectivePreferredDirection,
     });
 
     const grid = computeDrawerGrid(items.length, direction, scale);
@@ -327,6 +406,7 @@
       metrics,
       previewItems,
       direction,
+      dockedEdge,
       grid,
       baseRect,
       panelRect,
@@ -399,9 +479,11 @@
   }
 
   return {
+    SNAP_THRESHOLD_PX,
     getScaleMetrics,
     computeDrawerGrid,
     computeOpenDirection,
+    computeMagneticDock,
     createInteractionMachine,
     computeDrawerLayout,
     findDrawerAtPoint,
