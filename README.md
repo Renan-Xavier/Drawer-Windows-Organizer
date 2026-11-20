@@ -30,6 +30,25 @@ Caso esse programa tenha lhe ajudado em algo, pense na hipótese de me ajudar ta
 
 ---
 
+## 📥 Download & Instalação Oficial (Para Windows 10 e Windows 11)
+
+> 💻 **Sistema Operacional Compatível:** Exclusivo para **Microsoft Windows (Windows 10 e Windows 11 — 64 bits)**.
+
+Clique no botão ou nos links oficiais abaixo para baixar o instalador `.exe` diretamente do GitHub Oficial:
+
+<p align="center">
+  <a href="https://github.com/Renan-Xavier/Drawer-Windows-Organizer/releases/download/v2.0.0/Drawer-Setup-2.0.0.exe">
+    <img src="https://img.shields.io/badge/⬇_BAIXAR_INSTALADOR_PARA_WINDOWS-Drawer--Setup--2.0.0.exe-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Baixar Instalador Drawer-Setup-2.0.0.exe para Windows" />
+  </a>
+</p>
+
+* 📦 **Opção 1 — Instalador Oficial para Windows (Recomendado):** [**Clique aqui para baixar `Drawer-Setup-2.0.0.exe`**](https://github.com/Renan-Xavier/Drawer-Windows-Organizer/releases/download/v2.0.0/Drawer-Setup-2.0.0.exe)
+  *(Instala automaticamente no Windows, cria os atalhos na Área de Trabalho/Menu Iniciar e configura a inicialização automática com o Windows).*
+* ⚡ **Opção 2 — Executável Portátil para Windows:** [**Clique aqui para baixar `Drawer.exe`**](https://github.com/Renan-Xavier/Drawer-Windows-Organizer/releases/download/v2.0.0/Drawer.exe)
+* 🔗 **Página Oficial de Releases no GitHub:** [github.com/Renan-Xavier/Drawer-Windows-Organizer/releases/tag/v2.0.0](https://github.com/Renan-Xavier/Drawer-Windows-Organizer/releases/tag/v2.0.0)
+
+---
+
 ## 📌 Visão Geral
 
 O **Drawer 2.0** é um organizador nativo para Windows que agrupa programas, jogos e atalhos em **Gavetas inteligentes (Pods Nativos)** inspiradas no sistema de pastas do **Discord**.
