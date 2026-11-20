@@ -825,56 +825,85 @@ namespace DrawerNative
                 StartPoint = new Point(0, 0),
                 EndPoint = new Point(1, 1)
             };
-            tabGrad.GradientStops.Add(new GradientStop(Color.FromArgb(240, 37, 99, 235), 0.0));
-            tabGrad.GradientStops.Add(new GradientStop(Color.FromArgb(240, 30, 58, 138), 1.0));
+            tabGrad.GradientStops.Add(new GradientStop(Color.FromArgb(242, 37, 99, 235), 0.0));
+            tabGrad.GradientStops.Add(new GradientStop(Color.FromArgb(245, 23, 37, 84), 1.0));
             _edgeTabBorder.Background = tabGrad;
-            _edgeTabBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(220, 96, 165, 250));
+            _edgeTabBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(230, 96, 165, 250));
             _edgeTabBorder.BorderThickness = new Thickness(1.5);
 
-            var stack = new StackPanel
+            var rootStack = new StackPanel
             {
-                Orientation = (dockedEdge == "top") ? Orientation.Horizontal : Orientation.Vertical,
+                Orientation = Orientation.Vertical,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(4)
             };
 
-            // Accent pill bar
-            var bar = new Border
+            // Mini 2x2 Discord preview inside the magnetic edge tab
+            var miniGrid = new Grid
             {
-                Width = (dockedEdge == "top") ? 24 : 4,
-                Height = (dockedEdge == "top") ? 4 : 26,
-                CornerRadius = new CornerRadius(2),
-                Background = new SolidColorBrush(Color.FromRgb(147, 197, 253)),
-                Margin = new Thickness(2)
+                Width = 30,
+                Height = 30,
+                Margin = new Thickness(0, 1, 0, 3)
             };
-            stack.Children.Add(bar);
+            miniGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            miniGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            miniGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            miniGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            // First icon preview or initial badge
-            if (_drawer.items != null && _drawer.items.Count > 0 && !string.IsNullOrEmpty(_drawer.items[0].iconDataUrl))
+            List<DrawerItem> items = _drawer.items ?? new List<DrawerItem>();
+            for (int i = 0; i < 4; i++)
             {
-                BitmapSource bmp = Win32ShellService.DataUrlToBitmapSource(_drawer.items[0].iconDataUrl);
-                if (bmp != null)
+                var cell = new Border
                 {
-                    stack.Children.Add(new Image
+                    CornerRadius = new CornerRadius(3),
+                    Margin = new Thickness(1),
+                    Background = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255))
+                };
+                if (i < items.Count && !string.IsNullOrEmpty(items[i].iconDataUrl))
+                {
+                    BitmapSource bmp = Win32ShellService.DataUrlToBitmapSource(items[i].iconDataUrl);
+                    if (bmp != null)
                     {
-                        Source = bmp,
-                        Width = 16,
-                        Height = 16,
-                        Margin = new Thickness(2)
-                    });
+                        var img = new Image
+                        {
+                            Source = bmp,
+                            Width = 11,
+                            Height = 11,
+                            Stretch = Stretch.Uniform
+                        };
+                        RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                        cell.Child = img;
+                    }
                 }
+                Grid.SetRow(cell, i / 2);
+                Grid.SetColumn(cell, i % 2);
+                miniGrid.Children.Add(cell);
             }
+            rootStack.Children.Add(miniGrid);
 
-            _edgeTabBorder.Child = stack;
-            _edgeTabBorder.ToolTip = string.Format("{0} ({1} itens) — Passe o mouse para abrir",
-                _drawer.name, _drawer.items != null ? _drawer.items.Count : 0);
+            var tabLabel = new TextBlock
+            {
+                Text = _drawer.name,
+                Foreground = Brushes.White,
+                FontSize = 9.5,
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextAlignment = TextAlignment.Center,
+                MaxWidth = 42,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            rootStack.Children.Add(tabLabel);
+
+            _edgeTabBorder.Child = rootStack;
+            _edgeTabBorder.ToolTip = string.Format("{0} ({1} itens) — Aba Magnética (Passe o mouse para abrir)",
+                _drawer.name, items.Count);
 
             if (dockedEdge == "left")
             {
-                int tabW = 24;
-                int tabH = Math.Max(56, metrics.DrawerSize);
-                _edgeTabBorder.CornerRadius = new CornerRadius(0, 12, 12, 0);
+                int tabW = 48;
+                int tabH = 60;
+                _edgeTabBorder.CornerRadius = new CornerRadius(0, 14, 14, 0);
                 _edgeTabBorder.Width = tabW;
                 _edgeTabBorder.Height = tabH;
                 Left = 0;
@@ -886,9 +915,9 @@ namespace DrawerNative
             }
             else if (dockedEdge == "right")
             {
-                int tabW = 24;
-                int tabH = Math.Max(56, metrics.DrawerSize);
-                _edgeTabBorder.CornerRadius = new CornerRadius(12, 0, 0, 12);
+                int tabW = 48;
+                int tabH = 60;
+                _edgeTabBorder.CornerRadius = new CornerRadius(14, 0, 0, 14);
                 _edgeTabBorder.Width = tabW;
                 _edgeTabBorder.Height = tabH;
                 Left = Math.Max(0, screenW - tabW);
@@ -901,9 +930,9 @@ namespace DrawerNative
             else
             {
                 // top
-                int tabW = Math.Max(72, metrics.DrawerSize + 12);
-                int tabH = 24;
-                _edgeTabBorder.CornerRadius = new CornerRadius(0, 0, 12, 12);
+                int tabW = 64;
+                int tabH = 54;
+                _edgeTabBorder.CornerRadius = new CornerRadius(0, 0, 14, 14);
                 _edgeTabBorder.Width = tabW;
                 _edgeTabBorder.Height = tabH;
                 Left = _drawer.x;

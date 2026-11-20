@@ -1,13 +1,12 @@
-# Drawer — Organizador de Ícones Estilo Gavetas para Windows
+# Drawer 2.0 — Pods Nativos & Bordas Magnéticas para Windows
 
 <p align="center">
   <img src="assets/icon.png" alt="Logo Drawer" width="100" />
 </p>
 
-![Electron](https://img.shields.io/badge/Electron-35-47848F?style=for-the-badge&logo=electron&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-Node.js-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
-![C#](https://img.shields.io/badge/C%23-Win32_Native_Helper-239120?style=for-the-badge&logo=csharp&logoColor=white)
-![Windows](https://img.shields.io/badge/Windows-Desktop_App-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-WPF_DirectX_Native-239120?style=for-the-badge&logo=csharp&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-Win32_Shell_COM-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-Test_%26_Build_CLI-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
 [![Portfólio](https://img.shields.io/badge/Portfólio-renan--xavier.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://renan-xavier.vercel.app)
 
 **Autor:** Renan Santa Rosa Xavier | 🌐 **Portfólio:** [renan-xavier.vercel.app](https://renan-xavier.vercel.app)
@@ -16,90 +15,60 @@
 
 ## 📌 Visão Geral
 
-O **Drawer** é um aplicativo desktop para Windows que organiza a Área de Trabalho em **Gavetas inteligentes**, inspirado no sistema de pastas do **Discord**.
+O **Drawer 2.0** é um organizador nativo para Windows que agrupa programas, jogos e atalhos em **Gavetas inteligentes (Pods Nativos)** inspiradas no sistema de pastas do **Discord**.
 
-Em vez de dezenas de ícones espalhados pela tela, o Drawer agrupa atalhos em gavetas arredondadas compactas. Ao passar o mouse ou clicar, a gaveta expande suavemente um painel com autoajuste geométrico (`1×1`, `2×1`, `3×1`, `4×2`), mantendo os ícones organizados e acessíveis.
+Diferente de sobreposições de tela cheia tradicionais, cada gaveta no **Drawer 2.0** é uma **micro-janela nativa independente em C# / WPF acelerada por DirectX** (`WindowStyle.None`, zero barra superior, 0% de uso de CPU em repouso), integrada diretamente às APIs COM da Shell do Windows (`IContextMenu3`, `IShellLinkW`, `IShellItemImageFactory` e `ShellExecuteExW`).
 
 ---
 
-## 🎬 Demonstração do Sistema
+## ✨ Principais Inovações da Versão 2.0
 
-Prévia real do aplicativo em funcionamento na Área de Trabalho do Windows:
-
-![Prévia do Drawer na Área de Trabalho do Windows](assets/drawer_preview.png)
-
-### Principais Funcionalidades:
-* **Autoajuste Geométrico:** Calcula as dimensões ideais da grade conforme o número de atalhos adicionados.
-* **Detecção Inteligente de Bordas:** Identifica a posição do monitor e define automaticamente a direção de abertura (direita, baixo ou esquerda) para evitar que o painel saia da tela.
-* **Controle por Hover e Pin:**
-  * *Hover:* Abre com transição suave (`260ms cubic-bezier`) e fecha após `1,25s` de inatividade.
-  * *Clique único:* Trava (*Pin*) a gaveta aberta para consultas prolongadas.
-  * *Segundo clique:* Desafixa e recolhe a gaveta.
-* **Drag & Drop Nativo:** Suporte a arrastar e soltar atalhos diretamente da Área de Trabalho para a gaveta e vice-versa.
+* **Pods Nativos Independentes (Zero Sobreposição de Tela Cheia):** Cada gaveta ocupa apenas seus próprios pixels na tela — sem janela invisível cobrindo o monitor, sem barra superior fantasma e sem loops de *hit-test*.
+* **Encaixe Magnético nas Bordas (*Edge-Docked Tabs*):**
+  * No centro da tela, o Pod vive na camada da Área de Trabalho (não cobre suas janelas abertas).
+  * Ao arrastar um Pod até qualquer borda do monitor (**Esquerda**, **Direita** ou **Superior**), ele se acopla magneticamente como uma **Aba Retrátil estilo Discord** sempre acessível — basta encostar o mouse na borda da tela para abrir a gaveta por cima de qualquer jogo ou navegador maximizado.
+* **Atalho Global de Chamada Rápida (`Ctrl + Shift + D` — *Peek Mode*):** Traz todas as suas gavetas instantaneamente para a frente da janela atual para abrir qualquer programa sem precisar minimizar nada.
+* **Menu de Botão Direito 100% Nativo do Windows (`IContextMenu`):** Clicar com o botão direito em qualquer ícone dentro da gaveta abre o **menu real do Windows Explorer** daquele programa (*Abrir*, *Executar como administrador*, *Abrir local do arquivo*, *Propriedades*, etc.) integrado às ações da gaveta (*Renomear*, *Devolver para a Área de Trabalho*).
+* **Execução 100% Fiel de Qualquer Atalho ou Programa (`.lnk`, `.url`, `.exe`, Pastas):** Preserva argumentos de inicialização (como Discord/Spotify `Update.exe --processStart`), diretório de trabalho (`WorkingDirectory`) e protocolos de jogos (`steam://rungameid/...`).
+* **Catálogo Rápido de Aplicativos (1 Clique):** Escaneia automaticamente todos os atalhos da **Área de Trabalho** e programas instalados no **Menu Iniciar** com busca em tempo real para adicionar às gavetas sem precisar procurar executáveis em pastas ocultas.
+* **Inicialização Real com o Windows:** Registro direto e validado em `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 
 ---
 
 ## 🏛️ Arquitetura da Solução
 
-O projeto combina a interface reativa do Electron com um helper nativo compilado em C# para acessar recursos de baixo nível da shell do Windows:
-
 ```mermaid
 flowchart TD
-    subgraph UI ["Camada de Interface (Renderer Process)"]
-        App["app.js / styles.css\nGrade de Ícones & Efeitos Visuais"]
-        Settings["settings.js\nConfigurações de Tema e Layout"]
+    subgraph NativeApp ["Drawer.exe — Aplicação 100% Nativa C# / WPF (.NET 4.8)"]
+        App["DrawerApp.cs\nOrquestrador, Bandeja do Sistema (Tray) & Atalho Global (Ctrl+Shift+D)"]
+        Pod["DrawerPodWindow.cs\nMicro-Janelas WPF Independentes, Autoajuste Geométrico & Abas Magnéticas de Borda"]
+        Catalog["AppCatalogWindow.cs\nCatálogo Rápido (Desktop + Menu Iniciar) & Configurações"]
+        Core["DrawerCore.cs\nGeometria 1x1..4xN, Snap Magnético, Vault Seguro & Registro HKCU\\Run"]
+        Shell["Win32ShellService.cs\nIContextMenu3 Nativo, ShellExecuteExW, IShellLinkW & IShellItemImageFactory 128px"]
     end
 
-    subgraph Bridge ["Comunicação Segura"]
-        Preload["preload.js\ncontextBridge & IPC Renderer"]
-    end
-
-    subgraph Core ["Processo Principal (Node.js / Electron Main)"]
-        Main["main.js\nCiclo de Vida da Janela"]
-        Geo["geometry.js\nCálculo de Matriz e Bordas"]
-        Store["store.js\nPersistência Local dos Atalhos (JSON)"]
-    end
-
-    subgraph Native ["Integração Nativa Windows"]
-        Win32["Win32Helper.cs (C#)\nAncoragem na Camada de Fundo (Desktop) & Extração de Ícones (.exe / .lnk / Steam)"]
-    end
-
-    UI <--> Bridge
-    Bridge <--> Core
-    Core <--> Native
+    App --> Pod
+    App --> Catalog
+    Pod --> Core
+    Pod --> Shell
+    Catalog --> Core
+    Catalog --> Shell
 ```
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+## 🚀 Como Compilar, Testar e Executar
 
-| Tecnologia | Papel no Projeto |
-| :--- | :--- |
-| **Electron 35** | Framework para construção de aplicações desktop multiplataforma usando tecnologias web. |
-| **Node.js** | Execução de rotinas do processo principal, leitura do sistema de arquivos e gerenciamento de processos. |
-| **C# (.NET / Win32)** | Helper compilado para invocar a API Win32 (`User32.dll`, `Shell32.dll`), garantindo que o app permaneça fixado ao nível do papel de parede (mesmo com `Win + D`) e extraindo ícones em alta resolução. |
-| **CSS3 Moderno** | Animações fluidas com curvas `cubic-bezier`, cantos arredondados e suporte a temas. |
-| **NSIS** | Criação do instalador executável (.exe) empacotado para distribuição no Windows. |
-
----
-
-## 🚀 Como Executar Localmente
-
-### Pré-requisitos
-* **Node.js 18+** e npm instalados.
-* Sistema operacional **Windows 10 ou 11**.
-
-### Comandos:
 ```bash
-# 1. Instalar as dependências do projeto
-npm install
+# 1. Compilar o aplicativo nativo (dist/Drawer.exe) e o instalador (dist/Drawer-Setup-2.0.0.exe)
+npm run dist
 
-# 2. Executar a suíte de testes automatizados
+# 2. Executar a suíte completa de testes automatizados (Node.js + Self-Test & Smoke-Test Nativo C#/WPF)
 npm test
 
-# 3. Iniciar o aplicativo em modo de desenvolvimento
+# 3. Iniciar o Drawer 2.0 Nativo
 npm start
 
-# 4. Compilar o helper nativo e gerar o instalador (.exe) na pasta dist/
-npm run dist
+# 4. Instalar/atualizar silenciosamente no Windows (%LOCALAPPDATA%\Programs\Drawer\Drawer.exe)
+npm run install:local
 ```

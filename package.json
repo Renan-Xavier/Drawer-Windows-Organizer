@@ -1,54 +1,18 @@
 {
   "name": "drawer",
   "productName": "Drawer",
-  "version": "1.0.0",
-  "description": "Organizador de ícones estilo gavetas (inspirado no Discord) para a Área de Trabalho do Windows",
-  "main": "src/main/main.js",
-  "author": "Drawer Desktop",
+  "version": "2.0.0",
+  "description": "Drawer 2.0 — Pods Nativos Independentes & Bordas Magnéticas para Windows (C# / WPF DirectX + Win32 Shell COM)",
+  "main": "src/main/build-native.js",
+  "author": "Renan Santa Rosa Xavier",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test tests/*.test.js",
+    "start": "node src/main/build-native.js && cmd /c start \"\" \"dist\\Drawer.exe\"",
+    "test": "node src/main/build-native.js && node --test tests/*.test.js",
     "icons": "node src/main/icon-generator.js",
-    "build:native": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /target:exe /optimize+ /out:assets\\win32-helper.exe src\\native\\Win32Helper.cs",
-    "dist": "npm run icons && npm run build:native && electron-builder --win --x64",
-    "pack": "npm run icons && npm run build:native && electron-builder --dir"
-  },
-  "build": {
-    "appId": "com.drawer.desktop.organizer",
-    "productName": "Drawer",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "src/**/*",
-      "assets/**/*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "assets/**/*"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Drawer",
-      "runAfterFinish": true,
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
-    }
+    "build:native": "node src/main/build-native.js",
+    "dist": "node src/main/build-native.js",
+    "install:local": "node src/main/build-native.js && dist\\Drawer-Setup-2.0.0.exe --silent"
   },
   "devDependencies": {
     "electron": "^35.0.0",
