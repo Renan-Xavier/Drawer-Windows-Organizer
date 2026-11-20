@@ -62,6 +62,8 @@ namespace DrawerNative
         private const int DWMWA_CLOAKED = 14;
 
         private const int SHCNE_CREATE = 0x00000002;
+        private const int SHCNE_DELETE = 0x00000004;
+        private const int SHCNE_RMDIR = 0x00000010;
         private const int SHCNE_UPDATEDIR = 0x00001000;
         private const uint SHCNF_PATHW = 0x0005;
         private const uint SHCNF_FLUSH = 0x1000;
@@ -155,6 +157,9 @@ namespace DrawerNative
 
         [DllImport("user32.dll")]
         public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
 
         [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -554,6 +559,55 @@ namespace DrawerNative
             }
         }
 
+        private static void NotifyDesktopFileRemovedCore(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath)) return;
+            try
+            {
+                SHChangeNotify(SHCNE_DELETE, SHCNF_PATHW | SHCNF_FLUSH, fullPath, null);
+                string dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSH, dir, null);
+                }
+                TryRemoveGhostDesktopListViewIcon(fullPath);
+            }
+            catch
+            {
+                // Ignore
+            }
+        }
+
+        public static void NotifyDesktopFileRemoved(string removedFilePath)
+        {
+            if (string.IsNullOrEmpty(removedFilePath)) return;
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(removedFilePath);
+            }
+            catch
+            {
+                return;
+            }
+
+            NotifyDesktopFileRemovedCore(fullPath);
+
+            // Schedule follow-up notifications after OLE DoDragDrop returns to explorer.exe
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                int[] delays = new int[] { 90, 240, 500 };
+                foreach (int d in delays)
+                {
+                    Thread.Sleep(d);
+                    if (!File.Exists(fullPath) && !Directory.Exists(fullPath))
+                    {
+                        NotifyDesktopFileRemovedCore(fullPath);
+                    }
+                }
+            });
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         private struct LVITEM64
         {
@@ -576,6 +630,7 @@ namespace DrawerNative
 
         private const uint LVM_FIRST = 0x1000;
         private const uint LVM_GETITEMCOUNT = LVM_FIRST + 4;
+        private const uint LVM_DELETEITEM = LVM_FIRST + 8;
         private const uint LVM_SETITEMPOSITION = LVM_FIRST + 15;
         private const uint LVM_SETITEMPOSITION32 = LVM_FIRST + 49;
         private const uint LVM_GETITEMTEXTW = LVM_FIRST + 115;
@@ -586,6 +641,114 @@ namespace DrawerNative
         private const uint MEM_COMMIT = 0x1000;
         private const uint MEM_RELEASE = 0x8000;
         private const uint PAGE_READWRITE = 0x04;
+
+        private static bool TryRemoveGhostDesktopListViewIcon(string removedFilePath)
+        {
+            if (string.IsNullOrEmpty(removedFilePath)) return false;
+            if (File.Exists(removedFilePath) || Directory.Exists(removedFilePath)) return false;
+
+            // Also verify no sibling file with the same display name still exists on user or public desktop
+            string targetNameNoExt = Path.GetFileNameWithoutExtension(removedFilePath) ?? "";
+            string targetFileName = Path.GetFileName(removedFilePath) ?? "";
+            if (string.IsNullOrEmpty(targetNameNoExt)) return false;
+
+            string dir = Path.GetDirectoryName(removedFilePath);
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            {
+                try
+                {
+                    foreach (string f in Directory.GetFiles(dir, targetNameNoExt + ".*"))
+                    {
+                        if (string.Equals(Path.GetFileNameWithoutExtension(f), targetNameNoExt, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return false;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            IntPtr hDesktopHost, hDefView;
+            FindDesktopHandles(out hDesktopHost, out hDefView);
+            if (hDefView == IntPtr.Zero) return false;
+
+            IntPtr hListView = FindWindowEx(hDefView, IntPtr.Zero, "SysListView32", null);
+            if (hListView == IntPtr.Zero) return false;
+
+            int itemCount = (int)SendMessage(hListView, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero);
+            if (itemCount <= 0) return false;
+
+            uint pid;
+            GetWindowThreadProcessId(hListView, out pid);
+            if (pid == 0) return false;
+
+            IntPtr hProc = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+            if (hProc == IntPtr.Zero) return false;
+
+            IntPtr remoteMem = IntPtr.Zero;
+            IntPtr localBuf = IntPtr.Zero;
+            try
+            {
+                const uint allocSize = 2048;
+                remoteMem = VirtualAllocEx(hProc, IntPtr.Zero, allocSize, MEM_COMMIT, PAGE_READWRITE);
+                if (remoteMem == IntPtr.Zero) return false;
+
+                int lvSize = Marshal.SizeOf(typeof(LVITEM64));
+                IntPtr remoteTextPtr = new IntPtr(remoteMem.ToInt64() + 128);
+                localBuf = Marshal.AllocHGlobal(1024);
+
+                bool removedAny = false;
+                for (int i = itemCount - 1; i >= 0; i--)
+                {
+                    var lvi = new LVITEM64
+                    {
+                        mask = 0x0001, // LVIF_TEXT
+                        iItem = i,
+                        iSubItem = 0,
+                        pszText = remoteTextPtr,
+                        cchTextMax = 260
+                    };
+
+                    Marshal.StructureToPtr(lvi, localBuf, false);
+                    IntPtr written;
+                    if (!WriteProcessMemory(hProc, remoteMem, localBuf, (uint)lvSize, out written))
+                        continue;
+
+                    int charsLen = (int)SendMessage(hListView, LVM_GETITEMTEXTW, new IntPtr(i), remoteMem);
+                    if (charsLen <= 0) continue;
+
+                    IntPtr read;
+                    if (!ReadProcessMemory(hProc, remoteTextPtr, localBuf, (uint)Math.Min(520, (charsLen + 1) * 2), out read))
+                        continue;
+
+                    string itemText = Marshal.PtrToStringUni(localBuf, charsLen);
+                    if (string.IsNullOrEmpty(itemText)) continue;
+
+                    if (string.Equals(itemText.Trim(), targetNameNoExt.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(itemText.Trim(), targetFileName.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        SendMessage(hListView, LVM_DELETEITEM, new IntPtr(i), IntPtr.Zero);
+                        removedAny = true;
+                    }
+                }
+
+                if (removedAny)
+                {
+                    InvalidateRect(hListView, IntPtr.Zero, true);
+                }
+                return removedAny;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (localBuf != IntPtr.Zero) Marshal.FreeHGlobal(localBuf);
+                if (remoteMem != IntPtr.Zero) VirtualFreeEx(hProc, remoteMem, 0, MEM_RELEASE);
+                CloseHandle(hProc);
+            }
+        }
 
         private static bool TrySetDesktopListViewIconPosition(string filePath, int screenX, int screenY)
         {

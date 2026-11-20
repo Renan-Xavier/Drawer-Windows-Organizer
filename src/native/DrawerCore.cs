@@ -808,6 +808,32 @@ namespace DrawerNative
             }
         }
 
+        private bool IsDesktopFilePath(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return false;
+            if (!string.IsNullOrEmpty(_desktopDir) && IsInsideDirectory(filePath, _desktopDir))
+                return true;
+
+            try
+            {
+                string realUserDesktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                if (!string.IsNullOrEmpty(_desktopDir) &&
+                    !string.IsNullOrEmpty(realUserDesktop) &&
+                    string.Equals(
+                        Path.GetFullPath(_desktopDir).TrimEnd('\\', '/'),
+                        Path.GetFullPath(realUserDesktop).TrimEnd('\\', '/'),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    string commonDesktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+                    if (!string.IsNullOrEmpty(commonDesktop) && IsInsideDirectory(filePath, commonDesktop))
+                        return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
         private static void MoveFileSafe(string src, string dest)
         {
             string dir = Path.GetDirectoryName(dest);
@@ -892,7 +918,7 @@ namespace DrawerNative
                         if (!item.vaulted &&
                             !string.IsNullOrEmpty(item.targetPath) &&
                             File.Exists(item.targetPath) &&
-                            IsInsideDirectory(item.targetPath, _desktopDir))
+                            IsDesktopFilePath(item.targetPath))
                         {
                             string itemVaultDir = Path.Combine(_vaultRootDir, drawer.id);
                             Directory.CreateDirectory(itemVaultDir);
@@ -903,7 +929,26 @@ namespace DrawerNative
                             item.targetPath = destPath;
                             item.vaulted = true;
                             changed = true;
-                            Win32ShellService.NotifyDesktopFileRestored(_desktopDir);
+                            Win32ShellService.NotifyDesktopFileRemoved(origPath);
+                        }
+                        else if (item.vaulted && !string.IsNullOrEmpty(item.originalDesktopPath))
+                        {
+                            if (File.Exists(item.originalDesktopPath) && IsDesktopFilePath(item.originalDesktopPath))
+                            {
+                                string itemVaultDir = Path.Combine(_vaultRootDir, drawer.id);
+                                Directory.CreateDirectory(itemVaultDir);
+                                string destPath = !string.IsNullOrEmpty(item.targetPath)
+                                    ? item.targetPath
+                                    : Path.Combine(itemVaultDir, Path.GetFileName(item.originalDesktopPath));
+                                try
+                                {
+                                    MoveFileSafe(item.originalDesktopPath, destPath);
+                                    item.targetPath = destPath;
+                                    changed = true;
+                                }
+                                catch { }
+                            }
+                            Win32ShellService.NotifyDesktopFileRemoved(item.originalDesktopPath);
                         }
                     }
                     else if (item.vaulted && !string.IsNullOrEmpty(item.targetPath) && File.Exists(item.targetPath))
@@ -934,6 +979,24 @@ namespace DrawerNative
                     (!string.IsNullOrEmpty(existing.originalDesktopPath) &&
                      string.Equals(existing.originalDesktopPath, filePath, StringComparison.OrdinalIgnoreCase)))
                 {
+                    if (GetState().settings.moveDesktopFilesToVault &&
+                        File.Exists(filePath) &&
+                        IsDesktopFilePath(filePath))
+                    {
+                        try
+                        {
+                            string itemVaultDir = Path.Combine(_vaultRootDir, drawer.id);
+                            Directory.CreateDirectory(itemVaultDir);
+                            string destPath = Path.Combine(itemVaultDir, Path.GetFileName(filePath));
+                            MoveFileSafe(filePath, destPath);
+                            existing.targetPath = destPath;
+                            existing.originalDesktopPath = filePath;
+                            existing.vaulted = true;
+                            Save();
+                            Win32ShellService.NotifyDesktopFileRemoved(filePath);
+                        }
+                        catch { }
+                    }
                     return existing;
                 }
             }
@@ -954,7 +1017,7 @@ namespace DrawerNative
             if (GetState().settings.moveDesktopFilesToVault &&
                 !string.IsNullOrEmpty(_desktopDir) &&
                 File.Exists(filePath) &&
-                IsInsideDirectory(filePath, _desktopDir))
+                IsDesktopFilePath(filePath))
             {
                 try
                 {
@@ -965,7 +1028,7 @@ namespace DrawerNative
                     finalTargetPath = destPath;
                     originalDesktopPath = filePath;
                     vaulted = true;
-                    Win32ShellService.NotifyDesktopFileRestored(_desktopDir);
+                    Win32ShellService.NotifyDesktopFileRemoved(filePath);
                 }
                 catch
                 {

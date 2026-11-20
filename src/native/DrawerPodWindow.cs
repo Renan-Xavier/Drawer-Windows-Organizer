@@ -703,7 +703,9 @@ namespace DrawerNative
                 string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
                 if (files != null && files.Length > 0)
                 {
+                    e.Effects = DragDropEffects.Copy;
                     _isOpen = true;
+                    _controller.ActivatePod(_drawer.id, true);
                     _controller.AddFilesToDrawer(_drawer.id, files);
                 }
             }
