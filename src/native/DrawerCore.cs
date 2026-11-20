@@ -109,18 +109,84 @@ namespace DrawerNative
         public string ForcedDirection; // null | "right" | "left" | "down"
     }
 
+    public class PodPlacementResult
+    {
+        public int HandleX;
+        public int HandleY;
+        public int HandleSize;
+        public int LabelX;
+        public int LabelY;
+        public int LabelWidth;
+        public int LabelHeight;
+        public int PanelX;
+        public int PanelY;
+        public int PanelWidth;
+        public int PanelHeight;
+    }
+
     public static class DrawerGeometryEngine
     {
         public const int SNAP_THRESHOLD_PX = 18;
-        public const int LABEL_HEIGHT_PX = 30;
-        public const int PANEL_GAP_PX = 8;
+        public const int LABEL_HEIGHT_PX = 26;
+        public const int PANEL_GAP_PX = 6;
         public const int EDGE_TAB_THICKNESS_PX = 14;
 
         public static int ComputeDrawerLabelWidth(string drawerName, int handleWidth)
         {
-            int len = string.IsNullOrEmpty(drawerName) ? 6 : drawerName.Trim().Length;
-            int needed = len * 8 + 26;
-            return Math.Max(handleWidth + 28, Math.Min(186, needed));
+            int len = string.IsNullOrEmpty(drawerName) ? 4 : drawerName.Trim().Length;
+            int needed = (int)Math.Ceiling(len * 6.8) + 16;
+            return Math.Max(42, Math.Min(164, needed));
+        }
+
+        public static PodPlacementResult ComputePodPanelPlacement(
+            int handleX,
+            int handleY,
+            int handleSize,
+            string drawerName,
+            string direction,
+            GridDimensions grid,
+            int screenW)
+        {
+            int labelW = ComputeDrawerLabelWidth(drawerName, handleSize);
+            int labelX = Math.Max(4, Math.Min(screenW - labelW - 4, handleX + (handleSize - labelW) / 2));
+            int labelY = handleY + handleSize + 3;
+
+            int panelX = handleX;
+            int panelY = handleY;
+
+            if (direction == "right")
+            {
+                int rightMost = Math.Max(handleX + handleSize, labelX + labelW);
+                panelX = rightMost + PANEL_GAP_PX;
+                panelY = handleY;
+            }
+            else if (direction == "left")
+            {
+                int leftMost = Math.Min(handleX, labelX);
+                panelX = leftMost - PANEL_GAP_PX - grid.Width;
+                panelY = handleY;
+            }
+            else
+            {
+                // down
+                panelX = handleX;
+                panelY = handleY + handleSize + LABEL_HEIGHT_PX + 2;
+            }
+
+            return new PodPlacementResult
+            {
+                HandleX = handleX,
+                HandleY = handleY,
+                HandleSize = handleSize,
+                LabelX = labelX,
+                LabelY = labelY,
+                LabelWidth = labelW,
+                LabelHeight = LABEL_HEIGHT_PX,
+                PanelX = panelX,
+                PanelY = panelY,
+                PanelWidth = grid.Width,
+                PanelHeight = grid.Height
+            };
         }
 
         public static ScaleMetrics GetScaleMetrics(string scale)
@@ -132,12 +198,12 @@ namespace DrawerNative
                     Scale = "small",
                     DrawerSize = 48,
                     IconSize = 32,
-                    CellWidth = 88,
-                    CellHeight = 84,
+                    CellWidth = 74,
+                    CellHeight = 64,
                     BorderRadius = 12,
                     PreviewIconSize = 16,
-                    Padding = 10,
-                    Gap = 8
+                    Padding = 5,
+                    Gap = 4
                 };
             }
             if (scale == "large")
@@ -146,26 +212,26 @@ namespace DrawerNative
                 {
                     Scale = "large",
                     DrawerSize = 88,
-                    IconSize = 64,
-                    CellWidth = 116,
-                    CellHeight = 118,
-                    BorderRadius = 22,
+                    IconSize = 56,
+                    CellWidth = 98,
+                    CellHeight = 90,
+                    BorderRadius = 20,
                     PreviewIconSize = 30,
-                    Padding = 14,
-                    Gap = 10
+                    Padding = 7,
+                    Gap = 6
                 };
             }
             return new ScaleMetrics
             {
                 Scale = "medium",
                 DrawerSize = 64,
-                IconSize = 48,
-                CellWidth = 98,
-                CellHeight = 98,
-                BorderRadius = 16,
+                IconSize = 44,
+                CellWidth = 84,
+                CellHeight = 76,
+                BorderRadius = 15,
                 PreviewIconSize = 22,
-                Padding = 12,
-                Gap = 8
+                Padding = 6,
+                Gap = 5
             };
         }
 

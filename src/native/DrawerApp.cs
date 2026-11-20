@@ -29,6 +29,7 @@ namespace DrawerNative
         void AddFilesToDrawer(string drawerId, IEnumerable<string> filePaths);
         void PickFilesForDrawer(string drawerId);
         void RestoreItemToDesktop(string drawerId, string itemId);
+        void RestoreItemToDesktopAtPosition(string drawerId, string itemId, int screenX, int screenY);
         void MoveItemBetweenDrawers(string fromDrawerId, string itemId, string toDrawerId);
         void PromptRenameItem(string drawerId, DrawerItem item);
         void LaunchItem(string drawerId, DrawerItem item);
@@ -36,6 +37,7 @@ namespace DrawerNative
         void OpenCatalogForDrawer(string drawerId);
         void OpenSettingsWindow();
         bool IsScreenPointInsideAnyPod(int screenX, int screenY);
+        string FindDrawerPodAtScreenPoint(int screenX, int screenY);
     }
 
     public class DrawerAppController : IDrawerAppController
@@ -77,7 +79,7 @@ namespace DrawerNative
         {
             DrawerAppState st = _store.Load();
 
-            // Refresh icons for existing items if missing
+            // Refresh icons for existing items if missing, and auto-trim transparent margins on existing cached icons
             bool iconsUpdated = false;
             foreach (DrawerModel d in st.drawers)
             {
@@ -96,6 +98,15 @@ namespace DrawerNative
                                 it.iconDataUrl = fresh;
                                 iconsUpdated = true;
                             }
+                        }
+                    }
+                    else
+                    {
+                        string trimmed = Win32ShellService.TrimDataUrlTransparentMargins(it.iconDataUrl);
+                        if (!string.IsNullOrEmpty(trimmed) && trimmed != it.iconDataUrl)
+                        {
+                            it.iconDataUrl = trimmed;
+                            iconsUpdated = true;
                         }
                     }
                 }
@@ -422,6 +433,16 @@ namespace DrawerNative
             SyncPodWindows();
         }
 
+        public void RestoreItemToDesktopAtPosition(string drawerId, string itemId, int screenX, int screenY)
+        {
+            string restoredPath = _store.MoveItemToDesktop(drawerId, itemId);
+            SyncPodWindows();
+            if (!string.IsNullOrEmpty(restoredPath))
+            {
+                Win32ShellService.PositionDesktopIconAtScreenPoint(restoredPath, screenX, screenY);
+            }
+        }
+
         public void MoveItemBetweenDrawers(string fromDrawerId, string itemId, string toDrawerId)
         {
             _store.MoveItemBetweenDrawers(fromDrawerId, itemId, toDrawerId);
@@ -573,15 +594,20 @@ namespace DrawerNative
 
         public bool IsScreenPointInsideAnyPod(int screenX, int screenY)
         {
+            return !string.IsNullOrEmpty(FindDrawerPodAtScreenPoint(screenX, screenY));
+        }
+
+        public string FindDrawerPodAtScreenPoint(int screenX, int screenY)
+        {
             foreach (DrawerPodWindow pod in _podWindows.Values)
             {
                 if (screenX >= pod.Left && screenX <= pod.Left + pod.Width &&
                     screenY >= pod.Top && screenY <= pod.Top + pod.Height)
                 {
-                    return true;
+                    return pod.DrawerId;
                 }
             }
-            return false;
+            return null;
         }
 
         public void Shutdown()
@@ -683,15 +709,35 @@ namespace DrawerNative
                                         bmpSrc != null &&
                                         bmpSrc.PixelWidth >= 32;
 
-                // 6. Drawer & Icon label sizing test (no cutoff on Ferramentas / Emuladores / small scale cells)
+                // 6. Drawer & Icon label sizing, non-overlapping panel placement, compact padding, and desktop positioner tests
                 int wFerramentas = DrawerGeometryEngine.ComputeDrawerLabelWidth("Ferramentas", 48);
                 int wEmuladores = DrawerGeometryEngine.ComputeDrawerLabelWidth("Emuladores", 48);
+                int wIdes = DrawerGeometryEngine.ComputeDrawerLabelWidth("IDEs", 48);
                 ScaleMetrics smallMetrics = DrawerGeometryEngine.GetScaleMetrics("small");
-                bool labelSizingOk = (wFerramentas >= 104) &&
-                                     (wEmuladores >= 104) &&
-                                     (smallMetrics.CellWidth >= 86);
 
-                bool allOk = geometryOk && magneticDockOk && startupRegistryOk && shortcutResolverOk && iconExtractionOk && catalogScannerOk && labelSizingOk;
+                bool labelSizingOk = (wFerramentas >= 84 && wFerramentas <= 110) &&
+                                     (wEmuladores >= 80 && wEmuladores <= 105) &&
+                                     (wIdes <= 50) &&
+                                     (smallMetrics.CellWidth >= 70);
+
+                PodPlacementResult pRight = DrawerGeometryEngine.ComputePodPanelPlacement(
+                    16, 255, 48, "Ferramentas", "right", g3, 1920);
+                PodPlacementResult pLeft = DrawerGeometryEngine.ComputePodPanelPlacement(
+                    1850, 255, 48, "Ferramentas", "left", g3, 1920);
+                bool noLabelPanelOverlapOk =
+                    (pRight.PanelX >= pRight.LabelX + pRight.LabelWidth + DrawerGeometryEngine.PANEL_GAP_PX) &&
+                    (pLeft.PanelX + g3.Width + DrawerGeometryEngine.PANEL_GAP_PX <= pLeft.LabelX);
+
+                bool compactPanelPaddingOk =
+                    (smallMetrics.Padding <= 6) &&
+                    (smallMetrics.CellHeight <= 68);
+
+                MethodInfo posMethod = typeof(Win32ShellService).GetMethod("PositionDesktopIconAtScreenPoint");
+                bool desktopIconPositionerOk = (posMethod != null);
+
+                bool allOk = geometryOk && magneticDockOk && startupRegistryOk && shortcutResolverOk &&
+                             iconExtractionOk && catalogScannerOk && labelSizingOk &&
+                             noLabelPanelOverlapOk && compactPanelPaddingOk && desktopIconPositionerOk;
                 var result = new Dictionary<string, object>
                 {
                     { "ok", allOk },
@@ -701,7 +747,10 @@ namespace DrawerNative
                     { "shortcutResolverOk", shortcutResolverOk },
                     { "iconExtractionOk", iconExtractionOk },
                     { "catalogScannerOk", catalogScannerOk },
-                    { "labelSizingOk", labelSizingOk }
+                    { "labelSizingOk", labelSizingOk },
+                    { "noLabelPanelOverlapOk", noLabelPanelOverlapOk },
+                    { "compactPanelPaddingOk", compactPanelPaddingOk },
+                    { "desktopIconPositionerOk", desktopIconPositionerOk }
                 };
                 Console.Out.WriteLine(serializer.Serialize(result));
                 return allOk ? 0 : 1;

@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
+using System.Threading;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 
@@ -137,6 +138,33 @@ namespace DrawerNative
 
         [DllImport("user32.dll")]
         public static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW")]
+        public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool VirtualFreeEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint dwFreeType);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, IntPtr lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, IntPtr lpBuffer, uint nSize, out IntPtr lpNumberOfBytesRead);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
 
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -430,6 +458,168 @@ namespace DrawerNative
             {
                 // Ignore
             }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LVITEM64
+        {
+            public uint mask;
+            public int iItem;
+            public int iSubItem;
+            public uint state;
+            public uint stateMask;
+            public IntPtr pszText;
+            public int cchTextMax;
+            public int iImage;
+            public IntPtr lParam;
+            public int iIndent;
+            public int iGroupId;
+            public uint cColumns;
+            public IntPtr puColumns;
+            public IntPtr piColFmt;
+            public int iGroup;
+        }
+
+        private const uint LVM_FIRST = 0x1000;
+        private const uint LVM_GETITEMCOUNT = LVM_FIRST + 4;
+        private const uint LVM_SETITEMPOSITION = LVM_FIRST + 15;
+        private const uint LVM_SETITEMPOSITION32 = LVM_FIRST + 49;
+        private const uint LVM_GETITEMTEXTW = LVM_FIRST + 115;
+
+        private const uint PROCESS_VM_OPERATION = 0x0008;
+        private const uint PROCESS_VM_READ = 0x0010;
+        private const uint PROCESS_VM_WRITE = 0x0020;
+        private const uint MEM_COMMIT = 0x1000;
+        private const uint MEM_RELEASE = 0x8000;
+        private const uint PAGE_READWRITE = 0x04;
+
+        private static bool TrySetDesktopListViewIconPosition(string filePath, int screenX, int screenY)
+        {
+            if (string.IsNullOrEmpty(filePath)) return false;
+
+            IntPtr hDesktopHost, hDefView;
+            FindDesktopHandles(out hDesktopHost, out hDefView);
+            if (hDefView == IntPtr.Zero) return false;
+
+            IntPtr hListView = FindWindowEx(hDefView, IntPtr.Zero, "SysListView32", null);
+            if (hListView == IntPtr.Zero) return false;
+
+            POINT clientPt = new POINT { X = screenX, Y = screenY };
+            ScreenToClient(hListView, ref clientPt);
+            clientPt.X = Math.Max(4, clientPt.X - 24);
+            clientPt.Y = Math.Max(4, clientPt.Y - 24);
+
+            int itemCount = (int)SendMessage(hListView, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero);
+            if (itemCount <= 0) return false;
+
+            uint pid;
+            GetWindowThreadProcessId(hListView, out pid);
+            if (pid == 0) return false;
+
+            string targetNameNoExt = Path.GetFileNameWithoutExtension(filePath) ?? "";
+            string targetFileName = Path.GetFileName(filePath) ?? "";
+
+            IntPtr hProc = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+            if (hProc == IntPtr.Zero) return false;
+
+            IntPtr remoteMem = IntPtr.Zero;
+            IntPtr localBuf = IntPtr.Zero;
+            try
+            {
+                const uint allocSize = 2048;
+                remoteMem = VirtualAllocEx(hProc, IntPtr.Zero, allocSize, MEM_COMMIT, PAGE_READWRITE);
+                if (remoteMem == IntPtr.Zero) return false;
+
+                int lvSize = Marshal.SizeOf(typeof(LVITEM64));
+                IntPtr remoteTextPtr = new IntPtr(remoteMem.ToInt64() + 128);
+                IntPtr remotePtPtr = new IntPtr(remoteMem.ToInt64() + 1200);
+
+                localBuf = Marshal.AllocHGlobal(1024);
+
+                int matchedIndex = -1;
+                for (int i = 0; i < itemCount; i++)
+                {
+                    var lvi = new LVITEM64
+                    {
+                        mask = 0x0001, // LVIF_TEXT
+                        iItem = i,
+                        iSubItem = 0,
+                        pszText = remoteTextPtr,
+                        cchTextMax = 260
+                    };
+
+                    Marshal.StructureToPtr(lvi, localBuf, false);
+                    IntPtr written;
+                    if (!WriteProcessMemory(hProc, remoteMem, localBuf, (uint)lvSize, out written))
+                        continue;
+
+                    int charsLen = (int)SendMessage(hListView, LVM_GETITEMTEXTW, new IntPtr(i), remoteMem);
+                    if (charsLen <= 0) continue;
+
+                    IntPtr read;
+                    if (!ReadProcessMemory(hProc, remoteTextPtr, localBuf, (uint)Math.Min(520, (charsLen + 1) * 2), out read))
+                        continue;
+
+                    string itemText = Marshal.PtrToStringUni(localBuf, charsLen);
+                    if (string.IsNullOrEmpty(itemText)) continue;
+
+                    if (string.Equals(itemText.Trim(), targetNameNoExt.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(itemText.Trim(), targetFileName.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedIndex = i;
+                        break;
+                    }
+                }
+
+                if (matchedIndex < 0) return false;
+
+                // Position via both LVM_SETITEMPOSITION32 and LVM_SETITEMPOSITION
+                Marshal.StructureToPtr(clientPt, localBuf, false);
+                IntPtr bytesWritten;
+                if (WriteProcessMemory(hProc, remotePtPtr, localBuf, (uint)Marshal.SizeOf(typeof(POINT)), out bytesWritten))
+                {
+                    SendMessage(hListView, LVM_SETITEMPOSITION32, new IntPtr(matchedIndex), remotePtPtr);
+                }
+
+                int packedPos = ((clientPt.Y & 0xFFFF) << 16) | (clientPt.X & 0xFFFF);
+                SendMessage(hListView, LVM_SETITEMPOSITION, new IntPtr(matchedIndex), new IntPtr(packedPos));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (localBuf != IntPtr.Zero) Marshal.FreeHGlobal(localBuf);
+                if (remoteMem != IntPtr.Zero) VirtualFreeEx(hProc, remoteMem, 0, MEM_RELEASE);
+                CloseHandle(hProc);
+            }
+        }
+
+        public static void PositionDesktopIconAtScreenPoint(string filePath, int screenX, int screenY)
+        {
+            if (string.IsNullOrEmpty(filePath)) return;
+            NotifyDesktopFileRestored(filePath);
+
+            if (TrySetDesktopListViewIconPosition(filePath, screenX, screenY))
+            {
+                return;
+            }
+
+            // Schedule fast background retries as Windows Explorer processes SHChangeNotify and inserts the desktop icon
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                int[] delays = new int[] { 70, 180, 380, 700 };
+                foreach (int d in delays)
+                {
+                    Thread.Sleep(d);
+                    if (TrySetDesktopListViewIconPosition(filePath, screenX, screenY))
+                    {
+                        break;
+                    }
+                }
+            });
         }
 
         public static ResolvedShortcutInfo ResolveShortcutDetails(string filePath)
@@ -942,12 +1132,118 @@ namespace DrawerNative
             return result;
         }
 
+        private static Bitmap TrimTransparentMargins(Bitmap src)
+        {
+            if (src == null || src.Width <= 16 || src.Height <= 16) return src;
+            try
+            {
+                int w = src.Width;
+                int h = src.Height;
+                int minX = w, minY = h, maxX = -1, maxY = -1;
+
+                BitmapData data = src.LockBits(
+                    new Rectangle(0, 0, w, h),
+                    ImageLockMode.ReadOnly,
+                    PixelFormat.Format32bppArgb);
+
+                try
+                {
+                    int stride = data.Stride;
+                    byte[] buf = new byte[stride * h];
+                    Marshal.Copy(data.Scan0, buf, 0, buf.Length);
+
+                    for (int y = 0; y < h; y++)
+                    {
+                        int rowOffset = y * stride;
+                        for (int x = 0; x < w; x++)
+                        {
+                            byte alpha = buf[rowOffset + x * 4 + 3];
+                            if (alpha > 12)
+                            {
+                                if (x < minX) minX = x;
+                                if (x > maxX) maxX = x;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    src.UnlockBits(data);
+                }
+
+                if (maxX < minX || maxY < minY) return src;
+
+                int contentW = maxX - minX + 1;
+                int contentH = maxY - minY + 1;
+                int boxSize = Math.Max(contentW, contentH);
+
+                // If content already fills > 90% of the bitmap, no trim needed
+                if (boxSize >= Math.Min(w, h) * 0.90) return src;
+
+                int pad = Math.Max(1, boxSize / 24);
+                int outSize = boxSize + pad * 2;
+                var trimmed = new Bitmap(outSize, outSize, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(trimmed))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    int dstX = pad + (boxSize - contentW) / 2;
+                    int dstY = pad + (boxSize - contentH) / 2;
+                    g.DrawImage(
+                        src,
+                        new Rectangle(dstX, dstY, contentW, contentH),
+                        new Rectangle(minX, minY, contentW, contentH),
+                        GraphicsUnit.Pixel);
+                }
+                return trimmed;
+            }
+            catch
+            {
+                return src;
+            }
+        }
+
         private static string BitmapToDataUrl(Bitmap bmp)
         {
-            using (var ms = new MemoryStream())
+            Bitmap clean = TrimTransparentMargins(bmp);
+            try
             {
-                bmp.Save(ms, ImageFormat.Png);
-                return "data:image/png;base64," + Convert.ToBase64String(ms.ToArray());
+                using (var ms = new MemoryStream())
+                {
+                    clean.Save(ms, ImageFormat.Png);
+                    return "data:image/png;base64," + Convert.ToBase64String(ms.ToArray());
+                }
+            }
+            finally
+            {
+                if (!ReferenceEquals(clean, bmp) && clean != null)
+                {
+                    clean.Dispose();
+                }
+            }
+        }
+
+        public static string TrimDataUrlTransparentMargins(string dataUrl)
+        {
+            if (string.IsNullOrEmpty(dataUrl)) return dataUrl;
+            const string prefix = "data:image/png;base64,";
+            string base64 = dataUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? dataUrl.Substring(prefix.Length)
+                : dataUrl;
+
+            try
+            {
+                byte[] bytes = Convert.FromBase64String(base64);
+                using (var ms = new MemoryStream(bytes))
+                using (var bmp = new Bitmap(ms))
+                {
+                    return BitmapToDataUrl(bmp);
+                }
+            }
+            catch
+            {
+                return dataUrl;
             }
         }
 

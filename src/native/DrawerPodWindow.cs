@@ -710,16 +710,22 @@ namespace DrawerNative
             GridDimensions grid = DrawerGeometryEngine.ComputeDrawerGrid(itemCount, direction, scale);
 
             int labelH = DrawerGeometryEngine.LABEL_HEIGHT_PX;
-            int gap = DrawerGeometryEngine.PANEL_GAP_PX;
+            PodPlacementResult placement = DrawerGeometryEngine.ComputePodPanelPlacement(
+                _drawer.x,
+                _drawer.y,
+                metrics.DrawerSize,
+                _drawer.name,
+                direction,
+                grid,
+                screenW);
 
-            // Compute absolute screen rectangles of handle+label and panel
-            int handleScreenX = _drawer.x;
-            int handleScreenY = _drawer.y;
-            int handleW = metrics.DrawerSize;
-            int handleH = metrics.DrawerSize;
+            int handleScreenX = placement.HandleX;
+            int handleScreenY = placement.HandleY;
+            int handleW = placement.HandleSize;
+            int handleH = placement.HandleSize;
 
-            int labelW = DrawerGeometryEngine.ComputeDrawerLabelWidth(_drawer.name, handleW);
-            int labelScreenX = Math.Max(4, Math.Min(screenW - labelW - 4, handleScreenX + (handleW - labelW) / 2));
+            int labelW = placement.LabelWidth;
+            int labelScreenX = placement.LabelX;
 
             int baseScreenX = Math.Min(handleScreenX, labelScreenX);
             int baseScreenY = handleScreenY;
@@ -727,26 +733,19 @@ namespace DrawerNative
             int baseW = baseRight - baseScreenX;
             int baseH = handleH + labelH;
 
-            int panelScreenX = handleScreenX;
-            int panelScreenY = handleScreenY;
+            int panelScreenX = placement.PanelX;
+            int panelScreenY = placement.PanelY;
 
             if (direction == "right")
             {
-                panelScreenX = handleScreenX + handleW + gap;
-                panelScreenY = handleScreenY;
                 _panelBorder.RenderTransformOrigin = new Point(0.0, 0.2);
             }
             else if (direction == "left")
             {
-                panelScreenX = handleScreenX - gap - grid.Width;
-                panelScreenY = handleScreenY;
                 _panelBorder.RenderTransformOrigin = new Point(1.0, 0.2);
             }
             else
             {
-                // down
-                panelScreenX = handleScreenX;
-                panelScreenY = handleScreenY + handleH + labelH + 4;
                 _panelBorder.RenderTransformOrigin = new Point(0.2, 0.0);
             }
 
@@ -778,7 +777,7 @@ namespace DrawerNative
             Canvas.SetTop(_handleContainer, localHandleY);
 
             _labelBadge.MaxWidth = labelW;
-            _labelBadge.MinWidth = Math.Min(labelW, handleW + 16);
+            _labelBadge.MinWidth = Math.Min(labelW, 38);
             _labelBadge.Width = labelW;
             Canvas.SetLeft(_labelBadge, localLabelX);
             Canvas.SetTop(_labelBadge, localHandleY + handleH + 3);
@@ -1088,7 +1087,8 @@ namespace DrawerNative
             var stack = new StackPanel
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 2, 0, 0)
             };
 
             BitmapSource bmp = Win32ShellService.DataUrlToBitmapSource(item.iconDataUrl);
@@ -1100,7 +1100,7 @@ namespace DrawerNative
                     Width = metrics.IconSize,
                     Height = metrics.IconSize,
                     Stretch = Stretch.Uniform,
-                    Margin = new Thickness(0, 2, 0, 3)
+                    Margin = new Thickness(0, 0, 0, 2)
                 };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
                 stack.Children.Add(img);
@@ -1113,7 +1113,7 @@ namespace DrawerNative
                     Height = metrics.IconSize,
                     CornerRadius = new CornerRadius(10),
                     Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)),
-                    Margin = new Thickness(0, 2, 0, 3),
+                    Margin = new Thickness(0, 0, 0, 2),
                     Child = new TextBlock
                     {
                         Text = !string.IsNullOrEmpty(item.name) ? item.name.Substring(0, 1).ToUpperInvariant() : "?",
@@ -1131,58 +1131,112 @@ namespace DrawerNative
             {
                 Text = item.name,
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
-                FontSize = 11,
+                FontSize = 10.5,
                 FontWeight = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 TextAlignment = TextAlignment.Center,
                 LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
-                LineHeight = 13,
-                MaxWidth = metrics.CellWidth - 6,
-                MaxHeight = 28,
+                LineHeight = 12,
+                MaxWidth = metrics.CellWidth - 4,
+                MaxHeight = 25,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             stack.Children.Add(lbl);
             cell.Child = stack;
 
-            Point dragStart = new Point();
+            Point dragStartScreen = new Point();
             bool isDown = false;
+            bool isDraggingItem = false;
+            DragGhostWindow ghostWin = null;
 
             cell.MouseLeftButtonDown += delegate(object s, MouseButtonEventArgs e)
             {
                 e.Handled = true;
+                _hoverCloseTimer.Stop();
                 isDown = true;
-                dragStart = e.GetPosition(this);
+                isDraggingItem = false;
+                Win32ShellService.POINT pt;
+                Win32ShellService.GetCursorPos(out pt);
+                dragStartScreen = new Point(pt.X, pt.Y);
+                cell.CaptureMouse();
             };
 
             cell.MouseMove += delegate(object s, MouseEventArgs e)
             {
-                if (!isDown || e.LeftButton != MouseButtonState.Pressed) return;
-                Point cur = e.GetPosition(this);
-                if (Math.Abs(cur.X - dragStart.X) > 6 || Math.Abs(cur.Y - dragStart.Y) > 6)
+                if (!isDown || !cell.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed) return;
+                Win32ShellService.POINT curPt;
+                Win32ShellService.GetCursorPos(out curPt);
+                double dx = curPt.X - dragStartScreen.X;
+                double dy = curPt.Y - dragStartScreen.Y;
+
+                if (!isDraggingItem && Math.Sqrt(dx * dx + dy * dy) > 6)
                 {
-                    isDown = false;
-                    var data = new DataObject("DrawerItemDrag", string.Format("{0}|{1}", _drawer.id, item.id));
-                    DragDropEffects eff = DragDrop.DoDragDrop(cell, data, DragDropEffects.Move);
-                    if (eff == DragDropEffects.None)
+                    isDraggingItem = true;
+                    cell.Opacity = 0.35;
+                    ghostWin = new DragGhostWindow(item, metrics.IconSize);
+                    ghostWin.Show();
+                }
+
+                if (isDraggingItem && ghostWin != null)
+                {
+                    string hitDrawerId = _controller.FindDrawerPodAtScreenPoint(curPt.X, curPt.Y);
+                    if (string.IsNullOrEmpty(hitDrawerId))
                     {
-                        // User dragged outside all drawers onto the Desktop -> restore item to Desktop!
-                        Win32ShellService.POINT cursorPt;
-                        Win32ShellService.GetCursorPos(out cursorPt);
-                        if (!_controller.IsScreenPointInsideAnyPod(cursorPt.X, cursorPt.Y))
-                        {
-                            _controller.RestoreItemToDesktop(_drawer.id, item.id);
-                        }
+                        ghostWin.UpdatePositionAndHint(curPt.X, curPt.Y, "Soltar aqui na Área de Trabalho");
+                    }
+                    else if (hitDrawerId == _drawer.id)
+                    {
+                        ghostWin.UpdatePositionAndHint(curPt.X, curPt.Y, "Arraste para fora para mover ao Desktop");
+                    }
+                    else
+                    {
+                        ghostWin.UpdatePositionAndHint(curPt.X, curPt.Y, "Mover para outra Gaveta");
                     }
                 }
             };
 
             cell.MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
             {
+                if (cell.IsMouseCaptured)
+                {
+                    cell.ReleaseMouseCapture();
+                }
+                cell.Opacity = 1.0;
+
+                if (ghostWin != null)
+                {
+                    try { ghostWin.Close(); } catch { }
+                    ghostWin = null;
+                }
+
                 if (!isDown) return;
                 isDown = false;
                 e.Handled = true;
-                _controller.LaunchItem(_drawer.id, item);
+
+                if (!isDraggingItem)
+                {
+                    _controller.LaunchItem(_drawer.id, item);
+                    return;
+                }
+
+                isDraggingItem = false;
+                Win32ShellService.POINT dropPt;
+                Win32ShellService.GetCursorPos(out dropPt);
+
+                string targetDrawerId = _controller.FindDrawerPodAtScreenPoint(dropPt.X, dropPt.Y);
+                if (targetDrawerId == _drawer.id)
+                {
+                    return;
+                }
+                if (!string.IsNullOrEmpty(targetDrawerId) && targetDrawerId != _drawer.id)
+                {
+                    _controller.MoveItemBetweenDrawers(_drawer.id, item.id, targetDrawerId);
+                    return;
+                }
+
+                // Dropped on the Windows Desktop at (dropPt.X, dropPt.Y)!
+                _controller.RestoreItemToDesktopAtPosition(_drawer.id, item.id, dropPt.X, dropPt.Y);
             };
 
             // RIGHT CLICK -> Real Windows Shell Context Menu (IContextMenu)!
@@ -1244,6 +1298,121 @@ namespace DrawerNative
                     _hoverCloseTimer.Stop();
                     _hoverCloseTimer.Start();
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Floating native icon preview window that follows the cursor in real time while dragging an item out of a Drawer.
+    /// </summary>
+    public class DragGhostWindow : Window
+    {
+        private readonly TextBlock _hintText;
+
+        public DragGhostWindow(DrawerItem item, int iconSize)
+        {
+            WindowStyle = WindowStyle.None;
+            AllowsTransparency = true;
+            Background = Brushes.Transparent;
+            ResizeMode = ResizeMode.NoResize;
+            ShowInTaskbar = false;
+            ShowActivated = false;
+            Topmost = true;
+            Width = 150;
+            Height = iconSize + 52;
+            IsHitTestVisible = false;
+
+            var rootStack = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var card = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(8, 5, 8, 5),
+                Background = new SolidColorBrush(Color.FromArgb(225, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(220, 96, 165, 250)),
+                BorderThickness = new Thickness(1.5),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            var cardStack = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            BitmapSource bmp = Win32ShellService.DataUrlToBitmapSource(item != null ? item.iconDataUrl : "");
+            if (bmp != null)
+            {
+                var img = new Image
+                {
+                    Source = bmp,
+                    Width = iconSize,
+                    Height = iconSize,
+                    Stretch = Stretch.Uniform
+                };
+                RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                cardStack.Children.Add(img);
+            }
+
+            cardStack.Children.Add(new TextBlock
+            {
+                Text = item != null ? item.name : "Atalho",
+                Foreground = Brushes.White,
+                FontSize = 10.5,
+                FontWeight = FontWeights.SemiBold,
+                TextAlignment = TextAlignment.Center,
+                MaxWidth = 120,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+
+            card.Child = cardStack;
+            rootStack.Children.Add(card);
+
+            _hintText = new TextBlock
+            {
+                Text = "Soltar aqui na Área de Trabalho",
+                Foreground = new SolidColorBrush(Color.FromRgb(147, 197, 253)),
+                FontSize = 9.5,
+                FontWeight = FontWeights.SemiBold,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            var hintBadge = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(6, 2, 6, 2),
+                Margin = new Thickness(0, 3, 0, 0),
+                Background = new SolidColorBrush(Color.FromArgb(230, 9, 14, 26)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(140, 56, 189, 248)),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = _hintText
+            };
+            rootStack.Children.Add(hintBadge);
+
+            Content = rootStack;
+
+            SourceInitialized += delegate
+            {
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                long ex = Win32ShellService.GetWindowLongPtr(hwnd, Win32ShellService.GWL_EXSTYLE).ToInt64() & 0xFFFFFFFFL;
+                long desired = (ex | Win32ShellService.WS_EX_TOOLWINDOW | Win32ShellService.WS_EX_NOACTIVATE | Win32ShellService.WS_EX_TRANSPARENT) & 0xFFFFFFFFL;
+                Win32ShellService.SetWindowLongPtr(hwnd, Win32ShellService.GWL_EXSTYLE, new IntPtr(desired));
+            };
+        }
+
+        public void UpdatePositionAndHint(int screenX, int screenY, string hint)
+        {
+            Left = screenX - (Width / 2);
+            Top = screenY - 22;
+            if (_hintText != null)
+            {
+                _hintText.Text = hint;
             }
         }
     }
