@@ -27,6 +27,7 @@ test('Native C#/WPF Drawer.exe compiles and passes internal --self-test suite (g
   assert.equal(report.shortcutResolverOk, true);
   assert.equal(report.iconExtractionOk, true);
   assert.equal(report.catalogScannerOk, true);
+  assert.equal(report.labelSizingOk, true, 'Drawer and icon labels must be wide enough not to cut off names like Ferramentas or Emuladores');
 });
 
 test('Native C#/WPF Drawer.exe passes --smoke-test creating independent frameless WPF Pod windows without errors', () => {
@@ -43,4 +44,6 @@ test('Native C#/WPF Drawer.exe passes --smoke-test creating independent frameles
   assert.ok(report.podsCreated >= 1, 'At least 1 native WPF Pod window must be created');
   assert.equal(report.hasTitleBar, false, 'Native WPF Pod must NEVER have a title bar');
   assert.equal(report.isFullScreenOverlay, false, 'Native WPF Pod must NOT be a fullscreen overlay');
+  assert.equal(report.desktopLayerBottomLocked, true, 'Desktop Pods must lock to HWND_BOTTOM and return MA_NOACTIVATE so they never overlay Windows apps');
+  assert.equal(report.usesWin32TrackPopupMenu, true, 'Pod context menu must use Win32 TrackPopupMenuEx so clicking outside always closes the menu');
 });

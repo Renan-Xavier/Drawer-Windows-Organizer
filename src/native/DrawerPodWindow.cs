@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -55,6 +56,22 @@ namespace DrawerNative
         public bool IsPinned
         {
             get { return _isPinned; }
+        }
+
+        public bool ShouldBeTopmost
+        {
+            get
+            {
+                return _controller.IsPeekModeActive ||
+                       (_drawer.dockedEdge != null && _drawer.dockedEdge != "none");
+            }
+        }
+
+        public bool IsBottomLayerLocked { get; private set; }
+
+        public bool UsesWin32TrackPopupMenu
+        {
+            get { return true; }
         }
 
         public DrawerPodWindow(IDrawerAppController controller, DrawerModel drawer)
@@ -148,7 +165,8 @@ namespace DrawerNative
                 Foreground = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
                 FontSize = 11.5,
                 FontWeight = FontWeights.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.None,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
@@ -157,9 +175,9 @@ namespace DrawerNative
             _labelBadge = new Border
             {
                 CornerRadius = new CornerRadius(7),
-                Padding = new Thickness(7, 2, 7, 2),
-                Background = new SolidColorBrush(Color.FromArgb(195, 9, 14, 26)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(75, 148, 163, 184)),
+                Padding = new Thickness(8, 2, 8, 2),
+                Background = new SolidColorBrush(Color.FromArgb(205, 9, 14, 26)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(85, 148, 163, 184)),
                 BorderThickness = new Thickness(1),
                 Child = _labelText,
                 Cursor = Cursors.Hand
@@ -232,7 +250,42 @@ namespace DrawerNative
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             Win32ShellService.ConfigurePodToolWindowStyle(hwnd);
+            HwndSource src = HwndSource.FromHwnd(hwnd);
+            if (src != null)
+            {
+                src.AddHook(PodWndProc);
+                IsBottomLayerLocked = true;
+            }
             RefreshLayering();
+        }
+
+        private IntPtr PodWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == Win32ShellService.WM_MOUSEACTIVATE)
+            {
+                if (!ShouldBeTopmost && _inlineRenameBox.Visibility != Visibility.Visible)
+                {
+                    handled = true;
+                    return new IntPtr(Win32ShellService.MA_NOACTIVATE);
+                }
+            }
+            else if (msg == Win32ShellService.WM_WINDOWPOSCHANGING)
+            {
+                if (!ShouldBeTopmost && !_isContextMenuOpen && lParam != IntPtr.Zero)
+                {
+                    try
+                    {
+                        var wp = (Win32ShellService.WINDOWPOS)Marshal.PtrToStructure(
+                            lParam,
+                            typeof(Win32ShellService.WINDOWPOS));
+                        wp.hwndInsertAfter = Win32ShellService.HWND_BOTTOM;
+                        wp.flags |= Win32ShellService.SWP_NOACTIVATE;
+                        Marshal.StructureToPtr(wp, lParam, false);
+                    }
+                    catch { }
+                }
+            }
+            return IntPtr.Zero;
         }
 
         public void RefreshLayering()
@@ -240,10 +293,13 @@ namespace DrawerNative
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
 
-            bool shouldBeTopmost = _controller.IsPeekModeActive ||
-                                   (_drawer.dockedEdge != null && _drawer.dockedEdge != "none");
+            bool shouldBeTopmost = ShouldBeTopmost;
             Topmost = shouldBeTopmost;
             Win32ShellService.ApplyPodLayering(hwnd, shouldBeTopmost);
+            if (!shouldBeTopmost)
+            {
+                IsBottomLayerLocked = true;
+            }
         }
 
         public void UpdateDrawerModel(DrawerModel updated)
@@ -433,153 +489,83 @@ namespace DrawerNative
         {
             e.Handled = true;
             _isContextMenuOpen = true;
+            _hoverCloseTimer.Stop();
 
-            var menu = new ContextMenu();
-            menu.Closed += delegate
+            try
+            {
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                Win32ShellService.POINT pt;
+                Win32ShellService.GetCursorPos(out pt);
+
+                int cmd = Win32ShellService.ShowNativePodHandleContextMenu(
+                    hwnd,
+                    pt.X,
+                    pt.Y,
+                    _isPinned,
+                    _drawer.dockedEdge,
+                    _drawer.preferredDirection);
+
+                switch (cmd)
+                {
+                    case 1:
+                        _isPinned = !_isPinned;
+                        _isOpen = _isPinned;
+                        RenderPod();
+                        break;
+                    case 2:
+                        _controller.OpenCatalogForDrawer(_drawer.id);
+                        break;
+                    case 3:
+                        _controller.PickFilesForDrawer(_drawer.id);
+                        break;
+                    case 4:
+                        BeginInlineRename();
+                        break;
+                    case 5:
+                        _controller.CreateNewDrawer();
+                        break;
+                    case 6:
+                        _controller.OpenSettingsWindow();
+                        break;
+                    case 7:
+                        _controller.DeleteDrawer(_drawer.id);
+                        break;
+                    case 20:
+                        _controller.SetDrawerDockedEdge(_drawer.id, "none");
+                        break;
+                    case 21:
+                        _controller.SetDrawerDockedEdge(_drawer.id, "left");
+                        break;
+                    case 22:
+                        _controller.SetDrawerDockedEdge(_drawer.id, "right");
+                        break;
+                    case 23:
+                        _controller.SetDrawerDockedEdge(_drawer.id, "top");
+                        break;
+                    case 30:
+                        _controller.SetDrawerDirection(_drawer.id, "auto");
+                        break;
+                    case 31:
+                        _controller.SetDrawerDirection(_drawer.id, "right");
+                        break;
+                    case 32:
+                        _controller.SetDrawerDirection(_drawer.id, "down");
+                        break;
+                    case 33:
+                        _controller.SetDrawerDirection(_drawer.id, "left");
+                        break;
+                }
+            }
+            finally
             {
                 _isContextMenuOpen = false;
+                RefreshLayering();
                 if (!_isPinned && !IsMouseOver)
                 {
                     _hoverCloseTimer.Stop();
                     _hoverCloseTimer.Start();
                 }
-            };
-
-            var pinItem = new MenuItem
-            {
-                Header = _isPinned ? "Desafixar e Fechar Gaveta" : "Fixar Gaveta Aberta (Pin)",
-                FontWeight = FontWeights.SemiBold
-            };
-            pinItem.Click += delegate
-            {
-                _isPinned = !_isPinned;
-                _isOpen = _isPinned;
-                RenderPod();
-            };
-            menu.Items.Add(pinItem);
-
-            var catalogItem = new MenuItem
-            {
-                Header = "+ Catálogo Rápido de Apps (Desktop & Menu Iniciar)..."
-            };
-            catalogItem.Click += delegate
-            {
-                _controller.OpenCatalogForDrawer(_drawer.id);
-            };
-            menu.Items.Add(catalogItem);
-
-            var pickFileItem = new MenuItem
-            {
-                Header = "+ Escolher Arquivo ou Atalho (.lnk / .url / .exe)..."
-            };
-            pickFileItem.Click += delegate
-            {
-                _controller.PickFilesForDrawer(_drawer.id);
-            };
-            menu.Items.Add(pickFileItem);
-
-            var renameItem = new MenuItem
-            {
-                Header = "Renomear Gaveta..."
-            };
-            renameItem.Click += delegate
-            {
-                BeginInlineRename();
-            };
-            menu.Items.Add(renameItem);
-
-            menu.Items.Add(new Separator());
-
-            // Magnetic Screen-Edge Docking Submenu
-            var edgeMenu = new MenuItem
-            {
-                Header = "Acoplar na Borda Magnética (Sempre Acessível)"
-            };
-            AddEdgeOption(edgeMenu, "Livre na Área de Trabalho", "none");
-            AddEdgeOption(edgeMenu, "Aba Magnética na Borda Esquerda", "left");
-            AddEdgeOption(edgeMenu, "Aba Magnética na Borda Direita", "right");
-            AddEdgeOption(edgeMenu, "Aba Magnética na Borda Superior", "top");
-            menu.Items.Add(edgeMenu);
-
-            // Opening Direction Submenu
-            var dirMenu = new MenuItem
-            {
-                Header = "Direção de Abertura da Gaveta"
-            };
-            AddDirectionOption(dirMenu, "Automático (Inteligente)", "auto");
-            AddDirectionOption(dirMenu, "Abrir para a Direita", "right");
-            AddDirectionOption(dirMenu, "Abrir para Baixo", "down");
-            AddDirectionOption(dirMenu, "Abrir para a Esquerda", "left");
-            menu.Items.Add(dirMenu);
-
-            menu.Items.Add(new Separator());
-
-            var newDrawerItem = new MenuItem
-            {
-                Header = "+ Criar Nova Gaveta"
-            };
-            newDrawerItem.Click += delegate
-            {
-                _controller.CreateNewDrawer();
-            };
-            menu.Items.Add(newDrawerItem);
-
-            var settingsItem = new MenuItem
-            {
-                Header = "Configurações do Drawer..."
-            };
-            settingsItem.Click += delegate
-            {
-                _controller.OpenSettingsWindow();
-            };
-            menu.Items.Add(settingsItem);
-
-            menu.Items.Add(new Separator());
-
-            var deleteItem = new MenuItem
-            {
-                Header = "Excluir Gaveta (Devolver ícones ao Desktop)",
-                Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38))
-            };
-            deleteItem.Click += delegate
-            {
-                _controller.DeleteDrawer(_drawer.id);
-            };
-            menu.Items.Add(deleteItem);
-
-            menu.IsOpen = true;
-        }
-
-        private void AddEdgeOption(MenuItem parent, string title, string edgeCode)
-        {
-            string current = string.IsNullOrEmpty(_drawer.dockedEdge) ? "none" : _drawer.dockedEdge;
-            var item = new MenuItem
-            {
-                Header = title,
-                IsCheckable = true,
-                IsChecked = (current == edgeCode)
-            };
-            item.Click += delegate
-            {
-                _controller.SetDrawerDockedEdge(_drawer.id, edgeCode);
-            };
-            parent.Items.Add(item);
-        }
-
-        private void AddDirectionOption(MenuItem parent, string title, string dirCode)
-        {
-            string current = string.IsNullOrEmpty(_drawer.preferredDirection) ? "auto" : _drawer.preferredDirection;
-            var item = new MenuItem
-            {
-                Header = title,
-                IsCheckable = true,
-                IsChecked = (current == dirCode)
-            };
-            item.Click += delegate
-            {
-                _controller.SetDrawerDirection(_drawer.id, dirCode);
-            };
-            parent.Items.Add(item);
+            }
         }
 
         private void OnPodDragOver(object sender, DragEventArgs e)
@@ -723,7 +709,6 @@ namespace DrawerNative
 
             GridDimensions grid = DrawerGeometryEngine.ComputeDrawerGrid(itemCount, direction, scale);
 
-            int labelExtraW = 24;
             int labelH = DrawerGeometryEngine.LABEL_HEIGHT_PX;
             int gap = DrawerGeometryEngine.PANEL_GAP_PX;
 
@@ -733,9 +718,13 @@ namespace DrawerNative
             int handleW = metrics.DrawerSize;
             int handleH = metrics.DrawerSize;
 
-            int baseScreenX = handleScreenX - (labelExtraW / 2);
+            int labelW = DrawerGeometryEngine.ComputeDrawerLabelWidth(_drawer.name, handleW);
+            int labelScreenX = Math.Max(4, Math.Min(screenW - labelW - 4, handleScreenX + (handleW - labelW) / 2));
+
+            int baseScreenX = Math.Min(handleScreenX, labelScreenX);
             int baseScreenY = handleScreenY;
-            int baseW = handleW + labelExtraW;
+            int baseRight = Math.Max(handleScreenX + handleW, labelScreenX + labelW);
+            int baseW = baseRight - baseScreenX;
             int baseH = handleH + labelH;
 
             int panelScreenX = handleScreenX;
@@ -781,20 +770,21 @@ namespace DrawerNative
 
             double localHandleX = handleScreenX - winLeft;
             double localHandleY = handleScreenY - winTop;
+            double localLabelX = labelScreenX - winLeft;
 
             _handleContainer.Width = handleW;
             _handleContainer.Height = handleH;
             Canvas.SetLeft(_handleContainer, localHandleX);
             Canvas.SetTop(_handleContainer, localHandleY);
 
-            double labelW = handleW + labelExtraW;
             _labelBadge.MaxWidth = labelW;
+            _labelBadge.MinWidth = Math.Min(labelW, handleW + 16);
             _labelBadge.Width = labelW;
-            Canvas.SetLeft(_labelBadge, localHandleX - (labelExtraW / 2.0));
+            Canvas.SetLeft(_labelBadge, localLabelX);
             Canvas.SetTop(_labelBadge, localHandleY + handleH + 3);
 
             _inlineRenameBox.Width = labelW;
-            Canvas.SetLeft(_inlineRenameBox, localHandleX - (labelExtraW / 2.0));
+            Canvas.SetLeft(_inlineRenameBox, localLabelX);
             Canvas.SetTop(_inlineRenameBox, localHandleY + handleH + 2);
 
             if (showOpenPanel)
@@ -810,6 +800,8 @@ namespace DrawerNative
             {
                 _panelBorder.Visibility = Visibility.Collapsed;
             }
+
+            RefreshLayering();
         }
 
         private void RenderCollapsedEdgeTab(ScaleMetrics metrics, string dockedEdge, int screenW, int screenH)
@@ -1139,11 +1131,15 @@ namespace DrawerNative
             {
                 Text = item.name,
                 Foreground = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
-                FontSize = 10.5,
+                FontSize = 11,
                 FontWeight = FontWeights.Medium,
+                TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 TextAlignment = TextAlignment.Center,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                LineHeight = 13,
                 MaxWidth = metrics.CellWidth - 6,
+                MaxHeight = 28,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             stack.Children.Add(lbl);

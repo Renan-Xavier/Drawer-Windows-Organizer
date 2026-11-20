@@ -112,9 +112,16 @@ namespace DrawerNative
     public static class DrawerGeometryEngine
     {
         public const int SNAP_THRESHOLD_PX = 18;
-        public const int LABEL_HEIGHT_PX = 28;
+        public const int LABEL_HEIGHT_PX = 30;
         public const int PANEL_GAP_PX = 8;
         public const int EDGE_TAB_THICKNESS_PX = 14;
+
+        public static int ComputeDrawerLabelWidth(string drawerName, int handleWidth)
+        {
+            int len = string.IsNullOrEmpty(drawerName) ? 6 : drawerName.Trim().Length;
+            int needed = len * 8 + 26;
+            return Math.Max(handleWidth + 28, Math.Min(186, needed));
+        }
 
         public static ScaleMetrics GetScaleMetrics(string scale)
         {
@@ -125,12 +132,12 @@ namespace DrawerNative
                     Scale = "small",
                     DrawerSize = 48,
                     IconSize = 32,
-                    CellWidth = 58,
-                    CellHeight = 64,
+                    CellWidth = 88,
+                    CellHeight = 84,
                     BorderRadius = 12,
                     PreviewIconSize = 16,
-                    Padding = 8,
-                    Gap = 6
+                    Padding = 10,
+                    Gap = 8
                 };
             }
             if (scale == "large")
@@ -140,11 +147,11 @@ namespace DrawerNative
                     Scale = "large",
                     DrawerSize = 88,
                     IconSize = 64,
-                    CellWidth = 98,
-                    CellHeight = 106,
+                    CellWidth = 116,
+                    CellHeight = 118,
                     BorderRadius = 22,
                     PreviewIconSize = 30,
-                    Padding = 12,
+                    Padding = 14,
                     Gap = 10
                 };
             }
@@ -153,11 +160,11 @@ namespace DrawerNative
                 Scale = "medium",
                 DrawerSize = 64,
                 IconSize = 48,
-                CellWidth = 76,
-                CellHeight = 84,
+                CellWidth = 98,
+                CellHeight = 98,
                 BorderRadius = 16,
                 PreviewIconSize = 22,
-                Padding = 10,
+                Padding = 12,
                 Gap = 8
             };
         }

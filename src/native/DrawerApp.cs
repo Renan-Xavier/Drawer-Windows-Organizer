@@ -683,7 +683,15 @@ namespace DrawerNative
                                         bmpSrc != null &&
                                         bmpSrc.PixelWidth >= 32;
 
-                bool allOk = geometryOk && magneticDockOk && startupRegistryOk && shortcutResolverOk && iconExtractionOk && catalogScannerOk;
+                // 6. Drawer & Icon label sizing test (no cutoff on Ferramentas / Emuladores / small scale cells)
+                int wFerramentas = DrawerGeometryEngine.ComputeDrawerLabelWidth("Ferramentas", 48);
+                int wEmuladores = DrawerGeometryEngine.ComputeDrawerLabelWidth("Emuladores", 48);
+                ScaleMetrics smallMetrics = DrawerGeometryEngine.GetScaleMetrics("small");
+                bool labelSizingOk = (wFerramentas >= 104) &&
+                                     (wEmuladores >= 104) &&
+                                     (smallMetrics.CellWidth >= 86);
+
+                bool allOk = geometryOk && magneticDockOk && startupRegistryOk && shortcutResolverOk && iconExtractionOk && catalogScannerOk && labelSizingOk;
                 var result = new Dictionary<string, object>
                 {
                     { "ok", allOk },
@@ -692,7 +700,8 @@ namespace DrawerNative
                     { "startupRegistryOk", startupRegistryOk },
                     { "shortcutResolverOk", shortcutResolverOk },
                     { "iconExtractionOk", iconExtractionOk },
-                    { "catalogScannerOk", catalogScannerOk }
+                    { "catalogScannerOk", catalogScannerOk },
+                    { "labelSizingOk", labelSizingOk }
                 };
                 Console.Out.WriteLine(serializer.Serialize(result));
                 return allOk ? 0 : 1;
@@ -727,6 +736,8 @@ namespace DrawerNative
                 int podsCreated = controller.ActivePodCount;
                 bool hasTitleBar = false;
                 bool isFullScreenOverlay = false;
+                bool desktopLayerBottomLocked = true;
+                bool usesWin32TrackPopupMenu = true;
 
                 foreach (DrawerPodWindow pod in controller.GetPodWindows())
                 {
@@ -737,18 +748,24 @@ namespace DrawerNative
                     {
                         isFullScreenOverlay = true;
                     }
+                    if (!pod.IsBottomLayerLocked)
+                        desktopLayerBottomLocked = false;
+                    if (!pod.UsesWin32TrackPopupMenu)
+                        usesWin32TrackPopupMenu = false;
                 }
 
                 controller.Shutdown();
                 try { Directory.Delete(tmpDir, true); } catch { }
 
-                bool ok = (podsCreated >= 1) && !hasTitleBar && !isFullScreenOverlay;
+                bool ok = (podsCreated >= 1) && !hasTitleBar && !isFullScreenOverlay && desktopLayerBottomLocked && usesWin32TrackPopupMenu;
                 var report = new Dictionary<string, object>
                 {
                     { "ok", ok },
                     { "podsCreated", podsCreated },
                     { "hasTitleBar", hasTitleBar },
-                    { "isFullScreenOverlay", isFullScreenOverlay }
+                    { "isFullScreenOverlay", isFullScreenOverlay },
+                    { "desktopLayerBottomLocked", desktopLayerBottomLocked },
+                    { "usesWin32TrackPopupMenu", usesWin32TrackPopupMenu }
                 };
                 Console.Out.WriteLine(serializer.Serialize(report));
                 return ok ? 0 : 1;

@@ -63,6 +63,8 @@ namespace DrawerNative
         private const uint CMF_EXPLORE = 0x00000004;
 
         private const uint MF_STRING = 0x00000000;
+        private const uint MF_CHECKED = 0x00000008;
+        private const uint MF_POPUP = 0x00000010;
         private const uint MF_SEPARATOR = 0x00000800;
         private const uint MF_BYPOSITION = 0x00000400;
 
@@ -70,6 +72,10 @@ namespace DrawerNative
         private const uint TPM_RIGHTBUTTON = 0x0002;
         private const uint TPM_LEFTALIGN = 0x0000;
 
+        public const int WM_NULL = 0x0000;
+        public const int WM_MOUSEACTIVATE = 0x0021;
+        public const int MA_NOACTIVATE = 3;
+        public const int WM_WINDOWPOSCHANGING = 0x0046;
         private const int WM_INITMENUPOPUP = 0x0117;
         private const int WM_DRAWITEM = 0x002B;
         private const int WM_MEASUREITEM = 0x002C;
@@ -80,6 +86,21 @@ namespace DrawerNative
         public const uint MOD_CONTROL = 0x0002;
         public const uint MOD_SHIFT = 0x0004;
         public const uint VK_D = 0x44;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct WINDOWPOS
+        {
+            public IntPtr hwnd;
+            public IntPtr hwndInsertAfter;
+            public int x;
+            public int y;
+            public int cx;
+            public int cy;
+            public uint flags;
+        }
+
+        [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+        public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
         public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
@@ -718,7 +739,7 @@ namespace DrawerNative
                     hwndSource.AddHook(hook);
                 }
 
-                SetForegroundWindow(ownerHwnd);
+                PrepareWindowForTrackPopupMenu(ownerHwnd);
                 int selectedCmd = TrackPopupMenuEx(
                     hMenu,
                     TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
@@ -726,6 +747,7 @@ namespace DrawerNative
                     screenY,
                     ownerHwnd,
                     IntPtr.Zero);
+                FinishWindowAfterTrackPopupMenu(ownerHwnd);
 
                 if (selectedCmd == (int)ID_DRAWER_OPEN)
                 {
@@ -767,6 +789,7 @@ namespace DrawerNative
             }
             finally
             {
+                FinishWindowAfterTrackPopupMenu(ownerHwnd);
                 if (hwndSource != null)
                 {
                     try { hwndSource.RemoveHook(hook); } catch { }
@@ -776,6 +799,111 @@ namespace DrawerNative
                 if (hMenu != IntPtr.Zero) DestroyMenu(hMenu);
                 if (pCtxMenu != IntPtr.Zero) Marshal.Release(pCtxMenu);
                 if (pidlFull != IntPtr.Zero) CoTaskMemFree(pidlFull);
+            }
+        }
+
+        private static void PrepareWindowForTrackPopupMenu(IntPtr ownerHwnd)
+        {
+            if (ownerHwnd == IntPtr.Zero || !IsWindow(ownerHwnd)) return;
+            // Temporarily clear WS_EX_NOACTIVATE so SetForegroundWindow succeeds and clicking outside dismisses TrackPopupMenuEx (KB135788)
+            long exStyle = GetWindowLongPtr(ownerHwnd, GWL_EXSTYLE).ToInt64() & 0xFFFFFFFFL;
+            long activeAllowedEx = (exStyle & ~WS_EX_NOACTIVATE) & 0xFFFFFFFFL;
+            if (exStyle != activeAllowedEx)
+            {
+                SetWindowLongPtr(ownerHwnd, GWL_EXSTYLE, new IntPtr(activeAllowedEx));
+            }
+            SetForegroundWindow(ownerHwnd);
+        }
+
+        private static void FinishWindowAfterTrackPopupMenu(IntPtr ownerHwnd)
+        {
+            if (ownerHwnd == IntPtr.Zero || !IsWindow(ownerHwnd)) return;
+            PostMessage(ownerHwnd, (uint)WM_NULL, IntPtr.Zero, IntPtr.Zero);
+            ConfigurePodToolWindowStyle(ownerHwnd);
+        }
+
+        /// <summary>
+        /// Displays a 100% Native Win32 Popup Menu (TrackPopupMenuEx) for the Drawer Pod Handle,
+        /// ensuring that clicking anywhere outside the menu (on another app or Desktop) immediately closes it.
+        /// </summary>
+        public static int ShowNativePodHandleContextMenu(
+            IntPtr ownerHwnd,
+            int screenX,
+            int screenY,
+            bool isPinned,
+            string currentDockedEdge,
+            string currentPreferredDirection)
+        {
+            if (ownerHwnd == IntPtr.Zero || !IsWindow(ownerHwnd)) return 0;
+
+            IntPtr hMenu = CreatePopupMenu();
+            IntPtr hEdgeSub = CreatePopupMenu();
+            IntPtr hDirSub = CreatePopupMenu();
+            if (hMenu == IntPtr.Zero) return 0;
+
+            string edge = string.IsNullOrEmpty(currentDockedEdge) ? "none" : currentDockedEdge;
+            string dir = string.IsNullOrEmpty(currentPreferredDirection) ? "auto" : currentPreferredDirection;
+
+            try
+            {
+                // Edge docking submenu items (IDs 20..23)
+                InsertMenu(hEdgeSub, 0, MF_BYPOSITION | MF_STRING | (edge == "none" ? MF_CHECKED : 0),
+                    new UIntPtr(20), "Livre na Área de Trabalho (Atrás das Janelas)");
+                InsertMenu(hEdgeSub, 1, MF_BYPOSITION | MF_STRING | (edge == "left" ? MF_CHECKED : 0),
+                    new UIntPtr(21), "Aba Magnética na Borda Esquerda");
+                InsertMenu(hEdgeSub, 2, MF_BYPOSITION | MF_STRING | (edge == "right" ? MF_CHECKED : 0),
+                    new UIntPtr(22), "Aba Magnética na Borda Direita");
+                InsertMenu(hEdgeSub, 3, MF_BYPOSITION | MF_STRING | (edge == "top" ? MF_CHECKED : 0),
+                    new UIntPtr(23), "Aba Magnética na Borda Superior");
+
+                // Direction submenu items (IDs 30..33)
+                InsertMenu(hDirSub, 0, MF_BYPOSITION | MF_STRING | (dir == "auto" ? MF_CHECKED : 0),
+                    new UIntPtr(30), "Automático (Inteligente)");
+                InsertMenu(hDirSub, 1, MF_BYPOSITION | MF_STRING | (dir == "right" ? MF_CHECKED : 0),
+                    new UIntPtr(31), "Abrir para a Direita");
+                InsertMenu(hDirSub, 2, MF_BYPOSITION | MF_STRING | (dir == "down" ? MF_CHECKED : 0),
+                    new UIntPtr(32), "Abrir para Baixo");
+                InsertMenu(hDirSub, 3, MF_BYPOSITION | MF_STRING | (dir == "left" ? MF_CHECKED : 0),
+                    new UIntPtr(33), "Abrir para a Esquerda");
+
+                // Main menu items
+                uint pos = 0;
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(1),
+                    isPinned ? "Desafixar e Fechar Gaveta" : "Fixar Gaveta Aberta (Pin)");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(2),
+                    "+ Catálogo Rápido de Apps (Desktop & Menu Iniciar)...");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(3),
+                    "+ Escolher Arquivo ou Atalho (.lnk / .url / .exe)...");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(4),
+                    "Renomear Gaveta...");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_SEPARATOR, UIntPtr.Zero, null);
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_POPUP, new UIntPtr((ulong)hEdgeSub.ToInt64()),
+                    "Acoplar na Borda Magnética (Sempre Acessível)");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_POPUP, new UIntPtr((ulong)hDirSub.ToInt64()),
+                    "Direção de Abertura da Gaveta");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_SEPARATOR, UIntPtr.Zero, null);
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(5),
+                    "+ Criar Nova Gaveta");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(6),
+                    "Configurações do Drawer...");
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_SEPARATOR, UIntPtr.Zero, null);
+                InsertMenu(hMenu, pos++, MF_BYPOSITION | MF_STRING, new UIntPtr(7),
+                    "Excluir Gaveta (Devolver ícones ao Desktop)");
+
+                PrepareWindowForTrackPopupMenu(ownerHwnd);
+                int cmd = TrackPopupMenuEx(
+                    hMenu,
+                    TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
+                    screenX,
+                    screenY,
+                    ownerHwnd,
+                    IntPtr.Zero);
+                return cmd;
+            }
+            finally
+            {
+                FinishWindowAfterTrackPopupMenu(ownerHwnd);
+                if (hMenu != IntPtr.Zero) DestroyMenu(hMenu);
             }
         }
 
@@ -1066,39 +1194,10 @@ namespace DrawerNative
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
             }
 
-            IntPtr hDesktopHost, hDefView;
-            FindDesktopHandles(out hDesktopHost, out hDefView);
-
-            if (hDesktopHost == IntPtr.Zero)
-            {
-                SetWindowPos(
-                    hwnd,
-                    HWND_BOTTOM,
-                    0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
-                return;
-            }
-
-            IntPtr cur = GetWindow(hDesktopHost, GW_HWNDPREV);
-            int guard = 0;
-            while (cur != IntPtr.Zero && guard++ < 500)
-            {
-                if (cur == hwnd) return;
-                if (IsRealVisibleNormalWindow(cur, hwnd, hDesktopHost, hDefView))
-                {
-                    SetWindowPos(
-                        hwnd,
-                        cur,
-                        0, 0, 0, 0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-                    return;
-                }
-                cur = GetWindow(cur, GW_HWNDPREV);
-            }
-
+            // Place at HWND_BOTTOM of ZBID_DEFAULT (always behind all normal Windows programs, always above Desktop Progman)
             SetWindowPos(
                 hwnd,
-                HWND_TOP,
+                HWND_BOTTOM,
                 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
         }
