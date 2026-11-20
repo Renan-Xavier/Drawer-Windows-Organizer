@@ -1,6 +1,109 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
+const { computeMagneticDock } = require('./geometry');
+
+const WINDOWS_RUN_REGISTRY_KEY =
+  'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+const WINDOWS_RUN_VALUE_NAME = 'Drawer';
+
+function buildWindowsStartupCommand(exePath = '') {
+  const cleaned = String(exePath || '').trim().replace(/^"(.*)"$/, '$1');
+  if (!cleaned) return '';
+  return `"${cleaned}" --autostart`;
+}
+
+function syncWindowsStartupRegistry(
+  enabled,
+  exePath,
+  regRunner = (args) =>
+    execFileSync('reg.exe', args, { windowsHide: true, timeout: 2500 })
+) {
+  try {
+    if (enabled) {
+      const cmd = buildWindowsStartupCommand(exePath);
+      if (!cmd) return false;
+      regRunner([
+        'add',
+        WINDOWS_RUN_REGISTRY_KEY,
+        '/v',
+        WINDOWS_RUN_VALUE_NAME,
+        '/t',
+        'REG_SZ',
+        '/d',
+        cmd,
+        '/f',
+      ]);
+      return true;
+    }
+    regRunner([
+      'delete',
+      WINDOWS_RUN_REGISTRY_KEY,
+      '/v',
+      WINDOWS_RUN_VALUE_NAME,
+      '/f',
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scanShortcutCatalog(roots = []) {
+  const results = [];
+  const seenNames = new Set();
+
+  function walk(dirPath, sourceLabel, depth, maxDepth) {
+    if (!dirPath || depth > maxDepth || !fs.existsSync(dirPath)) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < maxDepth) {
+          walk(fullPath, sourceLabel, depth + 1, maxDepth);
+        }
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (ext !== '.lnk' && ext !== '.url' && ext !== '.exe') continue;
+      const baseName = path.basename(entry.name, ext).trim();
+      if (!baseName) continue;
+      if (/^(uninstall|desinstalar)\b|\b(uninstall|desinstalar)$/i.test(baseName)) {
+        continue;
+      }
+      const normKey = baseName.toLowerCase();
+      if (seenNames.has(normKey)) continue;
+      seenNames.add(normKey);
+
+      results.push({
+        name: baseName,
+        filePath: fullPath,
+        sourceLabel: sourceLabel || 'Sistema',
+        extension: ext,
+      });
+    }
+  }
+
+  for (const root of roots) {
+    if (!root || !root.dirPath) continue;
+    walk(
+      root.dirPath,
+      root.sourceLabel || 'Sistema',
+      1,
+      Number(root.maxDepth) || 2
+    );
+  }
+
+  return results.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
 
 function parseWindowsRegistryIconSize(rawOutput = '') {
   if (!rawOutput || typeof rawOutput !== 'string') {
@@ -232,9 +335,23 @@ function createDrawerStore({ storageDir, desktopDir }) {
   ) {
     const drawer = getDrawer(drawerId);
     if (!drawer) return null;
-    const clamped = clampPosition(x, y, drawerSize, screenWidth, screenHeight);
-    drawer.x = clamped.x;
-    drawer.y = clamped.y;
+    const dock = computeMagneticDock({
+      x,
+      y,
+      drawerSize,
+      screenWidth,
+      screenHeight,
+    });
+    if (dock.dockedEdge !== 'none') {
+      drawer.x = dock.x;
+      drawer.y = dock.y;
+      drawer.dockedEdge = dock.dockedEdge;
+    } else {
+      const clamped = clampPosition(x, y, drawerSize, screenWidth, screenHeight);
+      drawer.x = clamped.x;
+      drawer.y = clamped.y;
+      drawer.dockedEdge = 'none';
+    }
     save();
     return drawer;
   }
@@ -506,6 +623,11 @@ function createDrawerStore({ storageDir, desktopDir }) {
 }
 
 module.exports = {
+  WINDOWS_RUN_REGISTRY_KEY,
+  WINDOWS_RUN_VALUE_NAME,
+  buildWindowsStartupCommand,
+  syncWindowsStartupRegistry,
+  scanShortcutCatalog,
   parseWindowsRegistryIconSize,
   normalizeDrawerName,
   clampPosition,
