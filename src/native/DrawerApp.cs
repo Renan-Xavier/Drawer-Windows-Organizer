@@ -17,6 +17,12 @@ namespace DrawerNative
     public interface IDrawerAppController
     {
         bool IsPeekModeActive { get; }
+        bool IsShowDesktopRaised { get; }
+        bool IsAnyContextMenuOpen { get; }
+        string ActiveDrawerId { get; }
+        void ActivatePod(string drawerId, bool closeOtherHoverPods);
+        void SyncAllPodsLayering();
+        void RequestSyncAllPodsLayering();
         DrawerAppState GetState();
         string GetEffectiveScale();
         string GetBackgroundMode();
@@ -45,10 +51,16 @@ namespace DrawerNative
         private readonly DrawerStateStore _store;
         private readonly Dictionary<string, DrawerPodWindow> _podWindows;
         private readonly DispatcherTimer _layerTimer;
+        private readonly uint _currentPid;
         private AppCatalogWindow _catalogWindow;
         private Forms.NotifyIcon _trayIcon;
         private Window _hotkeySinkWindow;
+        private IntPtr _bottomProbeHwnd;
         private bool _isPeekModeActive;
+        private bool _isShowDesktopRaised;
+        private string _activeDrawerId;
+        private bool _syncLayeringQueued;
+        private int _layerTickCounter;
 
         private const int HOTKEY_ID_PEEK = 0x4452; // Ctrl + Shift + D
 
@@ -57,22 +69,157 @@ namespace DrawerNative
             get { return _isPeekModeActive; }
         }
 
+        public bool IsShowDesktopRaised
+        {
+            get { return _isShowDesktopRaised; }
+        }
+
+        public string ActiveDrawerId
+        {
+            get { return _activeDrawerId; }
+        }
+
+        public bool IsAnyContextMenuOpen
+        {
+            get
+            {
+                foreach (DrawerPodWindow pod in _podWindows.Values)
+                {
+                    if (pod.IsContextMenuOpen) return true;
+                }
+                return false;
+            }
+        }
+
         public DrawerAppController(DrawerStateStore store)
         {
             _store = store;
             _podWindows = new Dictionary<string, DrawerPodWindow>();
+            _currentPid = (uint)Process.GetCurrentProcess().Id;
 
             _layerTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(450)
+                Interval = TimeSpan.FromMilliseconds(140)
             };
-            _layerTimer.Tick += delegate
+            _layerTimer.Tick += OnLayerTimerTick;
+        }
+
+        private void OnLayerTimerTick(object sender, EventArgs e)
+        {
+            if (IsAnyContextMenuOpen) return;
+
+            bool showDesktopNow = Win32ShellService.IsShowDesktopStateActive(_bottomProbeHwnd, _currentPid);
+            _layerTickCounter++;
+
+            if (showDesktopNow != _isShowDesktopRaised)
+            {
+                _isShowDesktopRaised = showDesktopNow;
+                SyncAllPodsLayering();
+            }
+            else if (_layerTickCounter % 4 == 0)
+            {
+                SyncAllPodsLayering();
+            }
+        }
+
+        public void ActivatePod(string drawerId, bool closeOtherHoverPods)
+        {
+            if (!string.IsNullOrEmpty(drawerId))
+            {
+                _activeDrawerId = drawerId;
+            }
+
+            if (closeOtherHoverPods)
             {
                 foreach (DrawerPodWindow pod in _podWindows.Values)
                 {
-                    pod.RefreshLayering();
+                    if (pod.DrawerId != drawerId)
+                    {
+                        pod.CloseUnpinnedHover();
+                    }
                 }
-            };
+            }
+
+            SyncAllPodsLayering();
+        }
+
+        public void RequestSyncAllPodsLayering()
+        {
+            if (_syncLayeringQueued || IsAnyContextMenuOpen) return;
+            _syncLayeringQueued = true;
+
+            if (Application.Current != null && Application.Current.Dispatcher != null)
+            {
+                Application.Current.Dispatcher.BeginInvoke(
+                    new Action(SyncAllPodsLayering),
+                    DispatcherPriority.Render);
+            }
+            else
+            {
+                SyncAllPodsLayering();
+            }
+        }
+
+        public void SyncAllPodsLayering()
+        {
+            _syncLayeringQueued = false;
+            if (IsAnyContextMenuOpen) return;
+
+            var topmostPods = new List<DrawerPodWindow>();
+            var bottomPods = new List<DrawerPodWindow>();
+
+            foreach (DrawerPodWindow pod in _podWindows.Values)
+            {
+                if (pod.ShouldBeTopmost)
+                    topmostPods.Add(pod);
+                else
+                    bottomPods.Add(pod);
+            }
+
+            // 1. For HWND_TOPMOST pods: SetWindowPos(HWND_TOPMOST) puts the window at the FRONT of the topmost stack.
+            // Apply from BACK to FRONT: closed pods -> other open pods -> _activeDrawerId LAST (front-most!).
+            foreach (DrawerPodWindow pod in topmostPods)
+            {
+                if (pod.DrawerId != _activeDrawerId && !pod.IsDrawerOpen)
+                    pod.RefreshLayering();
+            }
+            foreach (DrawerPodWindow pod in topmostPods)
+            {
+                if (pod.DrawerId != _activeDrawerId && pod.IsDrawerOpen)
+                    pod.RefreshLayering();
+            }
+            foreach (DrawerPodWindow pod in topmostPods)
+            {
+                if (pod.DrawerId == _activeDrawerId)
+                    pod.RefreshLayering();
+            }
+
+            // 2. For HWND_BOTTOM pods: SetWindowPos(HWND_BOTTOM) puts the window at the BACK of the bottom stack.
+            // Apply from FRONT to BACK: _activeDrawerId FIRST (front-most!) -> other open pods -> closed pods LAST (back-most!).
+            foreach (DrawerPodWindow pod in bottomPods)
+            {
+                if (pod.DrawerId == _activeDrawerId)
+                    pod.RefreshLayering();
+            }
+            foreach (DrawerPodWindow pod in bottomPods)
+            {
+                if (pod.DrawerId != _activeDrawerId && pod.IsDrawerOpen)
+                    pod.RefreshLayering();
+            }
+            foreach (DrawerPodWindow pod in bottomPods)
+            {
+                if (pod.DrawerId != _activeDrawerId && !pod.IsDrawerOpen)
+                    pod.RefreshLayering();
+            }
+
+            if (_bottomProbeHwnd != IntPtr.Zero && Win32ShellService.IsWindow(_bottomProbeHwnd))
+            {
+                Win32ShellService.SetWindowPos(
+                    _bottomProbeHwnd,
+                    Win32ShellService.HWND_BOTTOM,
+                    0, 0, 0, 0,
+                    Win32ShellService.SWP_NOMOVE | Win32ShellService.SWP_NOSIZE | Win32ShellService.SWP_NOACTIVATE | Win32ShellService.SWP_NOSENDCHANGING);
+            }
         }
 
         public void Initialize(bool isSmokeTest)
@@ -142,20 +289,27 @@ namespace DrawerNative
         {
             _hotkeySinkWindow = new Window
             {
-                Width = 0,
-                Height = 0,
-                Left = -10000,
-                Top = -10000,
+                Width = 1,
+                Height = 1,
+                Left = -32000,
+                Top = -32000,
                 WindowStyle = WindowStyle.None,
                 ShowInTaskbar = false,
                 ShowActivated = false,
                 AllowsTransparency = true,
-                Background = Brushes.Transparent
+                Background = Brushes.Transparent,
+                IsHitTestVisible = false
             };
             _hotkeySinkWindow.SourceInitialized += delegate
             {
                 IntPtr hwnd = new WindowInteropHelper(_hotkeySinkWindow).Handle;
+                _bottomProbeHwnd = hwnd;
                 Win32ShellService.ConfigurePodToolWindowStyle(hwnd);
+                Win32ShellService.SetWindowPos(
+                    hwnd,
+                    Win32ShellService.HWND_BOTTOM,
+                    0, 0, 0, 0,
+                    Win32ShellService.SWP_NOMOVE | Win32ShellService.SWP_NOSIZE | Win32ShellService.SWP_NOACTIVATE | Win32ShellService.SWP_NOSENDCHANGING);
                 Win32ShellService.RegisterHotKey(
                     hwnd,
                     HOTKEY_ID_PEEK,
@@ -169,7 +323,6 @@ namespace DrawerNative
                 }
             };
             _hotkeySinkWindow.Show();
-            _hotkeySinkWindow.Hide();
         }
 
         private IntPtr HotkeyWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -185,10 +338,7 @@ namespace DrawerNative
         public void TogglePeekMode()
         {
             _isPeekModeActive = !_isPeekModeActive;
-            foreach (DrawerPodWindow pod in _podWindows.Values)
-            {
-                pod.RefreshLayering();
-            }
+            SyncAllPodsLayering();
             RebuildTrayMenu();
         }
 
@@ -306,9 +456,12 @@ namespace DrawerNative
                 {
                     var pod = new DrawerPodWindow(this, d);
                     _podWindows[d.id] = pod;
+                    if (string.IsNullOrEmpty(_activeDrawerId))
+                    {
+                        _activeDrawerId = d.id;
+                    }
                     pod.RenderPod();
                     pod.Show();
-                    pod.RefreshLayering();
                 }
             }
 
@@ -326,6 +479,8 @@ namespace DrawerNative
                 try { _podWindows[id].Close(); } catch { }
                 _podWindows.Remove(id);
             }
+
+            SyncAllPodsLayering();
 
             if (_catalogWindow != null && _catalogWindow.IsLoaded)
             {
@@ -807,15 +962,19 @@ namespace DrawerNative
                 var store = new DrawerStateStore(storageDir, desktopDir);
                 var controller = new DrawerAppController(store);
                 controller.Initialize(true);
+                controller.CreateNewDrawer();
 
                 int podsCreated = controller.ActivePodCount;
                 bool hasTitleBar = false;
                 bool isFullScreenOverlay = false;
                 bool desktopLayerBottomLocked = true;
                 bool usesWin32TrackPopupMenu = true;
+                bool excludedFromShowDesktopPeek = true;
 
+                var podList = new List<DrawerPodWindow>();
                 foreach (DrawerPodWindow pod in controller.GetPodWindows())
                 {
+                    podList.Add(pod);
                     if (pod.WindowStyle != WindowStyle.None)
                         hasTitleBar = true;
                     if (pod.Width >= SystemParameters.WorkArea.Width * 0.8 &&
@@ -827,12 +986,37 @@ namespace DrawerNative
                         desktopLayerBottomLocked = false;
                     if (!pod.UsesWin32TrackPopupMenu)
                         usesWin32TrackPopupMenu = false;
+                    if (!pod.IsExcludedFromShowDesktopPeek)
+                        excludedFromShowDesktopPeek = false;
+                }
+
+                bool activePodAboveOtherPods = false;
+                if (podList.Count >= 2)
+                {
+                    DrawerPodWindow podA = podList[0];
+                    DrawerPodWindow podB = podList[1];
+                    IntPtr hwndA = new WindowInteropHelper(podA).Handle;
+                    IntPtr hwndB = new WindowInteropHelper(podB).Handle;
+
+                    controller.ActivatePod(podA.DrawerId, true);
+                    bool aAboveB = Win32ShellService.IsWindowAboveInZOrder(hwndA, hwndB);
+
+                    controller.ActivatePod(podB.DrawerId, true);
+                    bool bAboveA = Win32ShellService.IsWindowAboveInZOrder(hwndB, hwndA);
+
+                    activePodAboveOtherPods = aAboveB && bAboveA;
                 }
 
                 controller.Shutdown();
                 try { Directory.Delete(tmpDir, true); } catch { }
 
-                bool ok = (podsCreated >= 1) && !hasTitleBar && !isFullScreenOverlay && desktopLayerBottomLocked && usesWin32TrackPopupMenu;
+                bool ok = (podsCreated >= 2) &&
+                          !hasTitleBar &&
+                          !isFullScreenOverlay &&
+                          desktopLayerBottomLocked &&
+                          usesWin32TrackPopupMenu &&
+                          excludedFromShowDesktopPeek &&
+                          activePodAboveOtherPods;
                 var report = new Dictionary<string, object>
                 {
                     { "ok", ok },
@@ -840,7 +1024,9 @@ namespace DrawerNative
                     { "hasTitleBar", hasTitleBar },
                     { "isFullScreenOverlay", isFullScreenOverlay },
                     { "desktopLayerBottomLocked", desktopLayerBottomLocked },
-                    { "usesWin32TrackPopupMenu", usesWin32TrackPopupMenu }
+                    { "usesWin32TrackPopupMenu", usesWin32TrackPopupMenu },
+                    { "excludedFromShowDesktopPeek", excludedFromShowDesktopPeek },
+                    { "activePodAboveOtherPods", activePodAboveOtherPods }
                 };
                 Console.Out.WriteLine(serializer.Serialize(report));
                 return ok ? 0 : 1;

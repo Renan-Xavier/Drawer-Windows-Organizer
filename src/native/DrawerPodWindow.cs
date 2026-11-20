@@ -58,16 +58,25 @@ namespace DrawerNative
             get { return _isPinned; }
         }
 
+        public bool IsContextMenuOpen
+        {
+            get { return _isContextMenuOpen; }
+        }
+
         public bool ShouldBeTopmost
         {
             get
             {
-                return _controller.IsPeekModeActive ||
+                return _isContextMenuOpen ||
+                       _controller.IsPeekModeActive ||
+                       _controller.IsShowDesktopRaised ||
                        (_drawer.dockedEdge != null && _drawer.dockedEdge != "none");
             }
         }
 
         public bool IsBottomLayerLocked { get; private set; }
+
+        public bool IsExcludedFromShowDesktopPeek { get; private set; }
 
         public bool UsesWin32TrackPopupMenu
         {
@@ -246,6 +255,7 @@ namespace DrawerNative
             _handleContainer.MouseLeftButtonDown += OnHandleMouseLeftButtonDown;
             _handleContainer.MouseMove += OnHandleMouseMove;
             _handleContainer.MouseLeftButtonUp += OnHandleMouseLeftButtonUp;
+            _handleContainer.MouseRightButtonDown += OnHandleMouseRightButtonDown;
             _handleContainer.MouseRightButtonUp += OnHandleMouseRightButtonUp;
 
             _labelBadge.MouseLeftButtonDown += OnLabelMouseLeftButtonDown;
@@ -258,7 +268,7 @@ namespace DrawerNative
         private void OnWindowSourceInitialized(object sender, EventArgs e)
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
-            Win32ShellService.ConfigurePodToolWindowStyle(hwnd);
+            IsExcludedFromShowDesktopPeek = Win32ShellService.ConfigurePodToolWindowStyle(hwnd);
             Win32ShellService.EnableNativeFileDropOnWindow(hwnd);
             HwndSource src = HwndSource.FromHwnd(hwnd);
             if (src != null)
@@ -279,11 +289,38 @@ namespace DrawerNative
                 {
                     _hoverCloseTimer.Stop();
                     _isOpen = true;
+                    _controller.ActivatePod(_drawer.id, true);
                     _controller.AddFilesToDrawer(_drawer.id, droppedFiles);
                 }
                 return IntPtr.Zero;
             }
-            if (msg == Win32ShellService.WM_MOUSEACTIVATE)
+            if (msg == Win32ShellService.WM_SYSCOMMAND)
+            {
+                int cmd = (int)(wParam.ToInt64() & 0xFFF0);
+                if (cmd == Win32ShellService.SC_MINIMIZE)
+                {
+                    handled = true;
+                    return IntPtr.Zero;
+                }
+            }
+            else if (msg == Win32ShellService.WM_SHOWWINDOW)
+            {
+                if (wParam == IntPtr.Zero && lParam != IntPtr.Zero)
+                {
+                    handled = true;
+                    Dispatcher.BeginInvoke(new Action(delegate
+                    {
+                        IntPtr h = new WindowInteropHelper(this).Handle;
+                        if (h != IntPtr.Zero)
+                        {
+                            Win32ShellService.ShowWindow(h, Win32ShellService.SW_SHOWNOACTIVATE);
+                            _controller.SyncAllPodsLayering();
+                        }
+                    }), DispatcherPriority.Send);
+                    return IntPtr.Zero;
+                }
+            }
+            else if (msg == Win32ShellService.WM_MOUSEACTIVATE)
             {
                 if (!ShouldBeTopmost && _inlineRenameBox.Visibility != Visibility.Visible)
                 {
@@ -300,9 +337,13 @@ namespace DrawerNative
                         var wp = (Win32ShellService.WINDOWPOS)Marshal.PtrToStructure(
                             lParam,
                             typeof(Win32ShellService.WINDOWPOS));
-                        wp.hwndInsertAfter = Win32ShellService.HWND_BOTTOM;
-                        wp.flags |= Win32ShellService.SWP_NOACTIVATE;
-                        Marshal.StructureToPtr(wp, lParam, false);
+                        if ((wp.flags & Win32ShellService.SWP_NOZORDER) == 0)
+                        {
+                            wp.hwndInsertAfter = Win32ShellService.HWND_BOTTOM;
+                            wp.flags |= Win32ShellService.SWP_NOACTIVATE;
+                            Marshal.StructureToPtr(wp, lParam, false);
+                            _controller.RequestSyncAllPodsLayering();
+                        }
                     }
                     catch { }
                 }
@@ -314,13 +355,24 @@ namespace DrawerNative
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
+            if (_isContextMenuOpen) return;
 
             bool shouldBeTopmost = ShouldBeTopmost;
-            Topmost = shouldBeTopmost;
             Win32ShellService.ApplyPodLayering(hwnd, shouldBeTopmost);
             if (!shouldBeTopmost)
             {
                 IsBottomLayerLocked = true;
+            }
+        }
+
+        public void CloseUnpinnedHover()
+        {
+            if (_isPinned || _isContextMenuOpen || _isDraggingPod) return;
+            _hoverCloseTimer.Stop();
+            if (_isOpen)
+            {
+                _isOpen = false;
+                RenderPod();
             }
         }
 
@@ -329,12 +381,14 @@ namespace DrawerNative
             if (updated == null) return;
             _drawer = updated;
             RenderPod();
-            RefreshLayering();
+            _controller.RequestSyncAllPodsLayering();
         }
 
         private void OnPodMouseEnter(object sender, MouseEventArgs e)
         {
+            if (_controller.IsAnyContextMenuOpen) return;
             _hoverCloseTimer.Stop();
+            _controller.ActivatePod(_drawer.id, true);
             if (!_isOpen)
             {
                 _isOpen = true;
@@ -364,6 +418,7 @@ namespace DrawerNative
             _hoverCloseTimer.Stop();
             _isOpen = true;
             _isPinned = true;
+            _controller.ActivatePod(_drawer.id, true);
             RenderPod();
             AnimatePanelOpen();
         }
@@ -389,6 +444,7 @@ namespace DrawerNative
             e.Handled = true;
             _hoverCloseTimer.Stop();
             _isDraggingPod = false;
+            _controller.ActivatePod(_drawer.id, true);
 
             Win32ShellService.POINT pt;
             Win32ShellService.GetCursorPos(out pt);
@@ -507,11 +563,20 @@ namespace DrawerNative
             CommitInlineRename();
         }
 
+        private void OnHandleMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            _isContextMenuOpen = true;
+            _hoverCloseTimer.Stop();
+            _controller.ActivatePod(_drawer.id, true);
+        }
+
         private void OnHandleMouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
             _isContextMenuOpen = true;
             _hoverCloseTimer.Stop();
+            _controller.ActivatePod(_drawer.id, true);
 
             try
             {
@@ -581,7 +646,7 @@ namespace DrawerNative
             finally
             {
                 _isContextMenuOpen = false;
-                RefreshLayering();
+                _controller.SyncAllPodsLayering();
                 if (!_isPinned && !IsMouseOver)
                 {
                     _hoverCloseTimer.Stop();
@@ -830,7 +895,7 @@ namespace DrawerNative
                 _panelBorder.Visibility = Visibility.Collapsed;
             }
 
-            RefreshLayering();
+            _controller.RequestSyncAllPodsLayering();
         }
 
         private void RenderCollapsedEdgeTab(ScaleMetrics metrics, string dockedEdge, int screenW, int screenH)
@@ -1270,6 +1335,14 @@ namespace DrawerNative
             };
 
             // RIGHT CLICK -> Real Windows Shell Context Menu (IContextMenu)!
+            cell.MouseRightButtonDown += delegate(object s, MouseButtonEventArgs e)
+            {
+                e.Handled = true;
+                _isContextMenuOpen = true;
+                _hoverCloseTimer.Stop();
+                _controller.ActivatePod(_drawer.id, true);
+            };
+
             cell.MouseRightButtonUp += delegate(object s, MouseButtonEventArgs e)
             {
                 e.Handled = true;
@@ -1283,6 +1356,7 @@ namespace DrawerNative
         {
             _isContextMenuOpen = true;
             _hoverCloseTimer.Stop();
+            _controller.ActivatePod(_drawer.id, true);
 
             try
             {
@@ -1323,6 +1397,7 @@ namespace DrawerNative
             finally
             {
                 _isContextMenuOpen = false;
+                _controller.SyncAllPodsLayering();
                 if (!_isPinned && !IsMouseOver)
                 {
                     _hoverCloseTimer.Stop();

@@ -40,6 +40,9 @@ namespace DrawerNative
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
 
+        public const uint GW_HWNDFIRST = 0;
+        public const uint GW_HWNDLAST = 1;
+        public const uint GW_HWNDNEXT = 2;
         public const uint GW_HWNDPREV = 3;
 
         public const uint SWP_NOSIZE = 0x0001;
@@ -53,6 +56,9 @@ namespace DrawerNative
         public const int SW_SHOWNOACTIVATE = 4;
         public const int SW_RESTORE = 9;
 
+        private const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
+        private const int DWMWA_DISALLOW_PEEK = 11;
+        private const int DWMWA_EXCLUDED_FROM_PEEK = 12;
         private const int DWMWA_CLOAKED = 14;
 
         private const int SHCNE_CREATE = 0x00000002;
@@ -74,11 +80,14 @@ namespace DrawerNative
         private const uint TPM_LEFTALIGN = 0x0000;
 
         public const int WM_NULL = 0x0000;
+        public const int WM_SHOWWINDOW = 0x0018;
         public const int WM_MOUSEACTIVATE = 0x0021;
         public const int MA_NOACTIVATE = 3;
         public const int WM_WINDOWPOSCHANGING = 0x0046;
         public const int WM_COPYGLOBALDATA = 0x0049;
         public const int WM_COPYDATA = 0x004A;
+        public const int WM_SYSCOMMAND = 0x0112;
+        public const int SC_MINIMIZE = 0xF020;
         public const int WM_DROPFILES = 0x0233;
         private const int WM_INITMENUPOPUP = 0x0117;
         private const int WM_DRAWITEM = 0x002B;
@@ -273,8 +282,17 @@ namespace DrawerNative
         [DllImport("user32.dll")]
         private static extern int TrackPopupMenuEx(IntPtr hmenu, uint fuFlags, int x, int y, IntPtr hwnd, IntPtr lptpm);
 
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetTopWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
         [DllImport("dwmapi.dll")]
         private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
         private static extern void SHChangeNotify(int wEventId, uint uFlags, string dwItem1, string dwItem2);
@@ -1071,13 +1089,20 @@ namespace DrawerNative
         private static void PrepareWindowForTrackPopupMenu(IntPtr ownerHwnd)
         {
             if (ownerHwnd == IntPtr.Zero || !IsWindow(ownerHwnd)) return;
-            // Temporarily clear WS_EX_NOACTIVATE so SetForegroundWindow succeeds and clicking outside dismisses TrackPopupMenuEx (KB135788)
+            // Temporarily clear WS_EX_NOACTIVATE and raise ownerHwnd to HWND_TOPMOST during modal TrackPopupMenuEx
+            // so SetForegroundWindow succeeds, clicking outside dismisses the menu (KB135788),
+            // and no other Drawer Pod can EVER overlap the active Pod or its right-click context menu!
             long exStyle = GetWindowLongPtr(ownerHwnd, GWL_EXSTYLE).ToInt64() & 0xFFFFFFFFL;
             long activeAllowedEx = (exStyle & ~WS_EX_NOACTIVATE) & 0xFFFFFFFFL;
             if (exStyle != activeAllowedEx)
             {
                 SetWindowLongPtr(ownerHwnd, GWL_EXSTYLE, new IntPtr(activeAllowedEx));
             }
+            SetWindowPos(
+                ownerHwnd,
+                HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
             SetForegroundWindow(ownerHwnd);
         }
 
@@ -1454,15 +1479,27 @@ namespace DrawerNative
             }
         }
 
-        public static void ConfigurePodToolWindowStyle(IntPtr hwnd)
+        public static bool ConfigurePodToolWindowStyle(IntPtr hwnd)
         {
-            if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return;
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return false;
             long exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & 0xFFFFFFFFL;
             long desiredEx = ((exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & 0xFFFFFFFFL;
             if (exStyle != desiredEx)
             {
                 SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(desiredEx));
             }
+
+            // Exclude Pod from Windows Show Desktop / Aero Peek (bottom-right taskbar button & Win+D)
+            // so DWM never hides, cloaks, or fades Drawer Pods when Show Desktop is clicked or hovered.
+            try
+            {
+                int val = 1;
+                DwmSetWindowAttribute(hwnd, DWMWA_EXCLUDED_FROM_PEEK, ref val, sizeof(int));
+                DwmSetWindowAttribute(hwnd, DWMWA_DISALLOW_PEEK, ref val, sizeof(int));
+                DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref val, sizeof(int));
+            }
+            catch { }
+            return true;
         }
 
         public static void EnableNativeFileDropOnWindow(IntPtr hwnd)
@@ -1661,23 +1698,31 @@ namespace DrawerNative
             hDesktopHost = progman;
         }
 
-        private static bool IsRealVisibleNormalWindow(IntPtr candidate, IntPtr selfHwnd, IntPtr hDesktopHost, IntPtr hDefView)
+        private static bool IsRealVisibleNormalWindow(IntPtr candidate, uint drawerPid, IntPtr hDesktopHost, IntPtr hDefView)
         {
-            if (candidate == IntPtr.Zero || candidate == selfHwnd || candidate == hDesktopHost || candidate == hDefView)
+            if (candidate == IntPtr.Zero || candidate == hDesktopHost || candidate == hDefView)
                 return false;
             if (!IsWindowVisible(candidate) || IsIconic(candidate))
                 return false;
 
+            uint pid;
+            GetWindowThreadProcessId(candidate, out pid);
+            if (pid == drawerPid) return false;
+
             long ex = GetWindowLongPtr(candidate, GWL_EXSTYLE).ToInt64();
             if ((ex & WS_EX_TOPMOST) != 0) return false;
-            if ((ex & WS_EX_TOOLWINDOW) != 0 && (ex & WS_EX_NOACTIVATE) != 0) return false;
+            if ((ex & WS_EX_TRANSPARENT) != 0) return false;
+            if (((ex & WS_EX_TOOLWINDOW) != 0 || (ex & WS_EX_NOACTIVATE) != 0) && (ex & WS_EX_APPWINDOW) == 0)
+                return false;
 
             int cloaked = 0;
             if (DwmGetWindowAttribute(candidate, DWMWA_CLOAKED, out cloaked, sizeof(int)) == 0 && cloaked != 0)
                 return false;
 
             RECT r;
-            if (!GetWindowRect(candidate, out r) || (r.Right - r.Left) <= 2 || (r.Bottom - r.Top) <= 2)
+            if (!GetWindowRect(candidate, out r) || (r.Right - r.Left) < 80 || (r.Bottom - r.Top) < 60)
+                return false;
+            if (r.Right <= 0 || r.Bottom <= 0)
                 return false;
 
             var sb = new StringBuilder(128);
@@ -1686,15 +1731,128 @@ namespace DrawerNative
                 string cls = sb.ToString();
                 if (cls == "Progman" ||
                     cls == "WorkerW" ||
+                    cls == "SHELLDLL_DefView" ||
                     cls == "Shell_TrayWnd" ||
                     cls == "Shell_SecondaryTrayWnd" ||
                     cls == "NotifyIconOverflowWindow" ||
-                    cls == "DummyDWMListenerWindow")
+                    cls == "DummyDWMListenerWindow" ||
+                    cls == "Windows.UI.Core.CoreWindow" ||
+                    cls == "XamlExplorerHostIslandWindow" ||
+                    cls == "TopLevelWindowForOverflowXamlIsland" ||
+                    cls == "EdgeUiInputTopWndClass" ||
+                    cls == "EdgeUiInputWndClass")
                 {
                     return false;
                 }
             }
             return true;
+        }
+
+        private static bool IsDesktopShellWindow(IntPtr candidate, IntPtr hDesktopHost, IntPtr hDefView)
+        {
+            if (candidate == IntPtr.Zero) return false;
+            if (candidate == hDesktopHost || candidate == hDefView) return true;
+            if (!IsWindowVisible(candidate)) return false;
+
+            var sb = new StringBuilder(64);
+            if (GetClassName(candidate, sb, 64) <= 0) return false;
+            string cls = sb.ToString();
+            if (cls != "WorkerW" && cls != "Progman") return false;
+
+            if (FindWindowEx(candidate, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero)
+                return true;
+
+            RECT r;
+            if (GetWindowRect(candidate, out r) && (r.Right - r.Left) >= 640 && (r.Bottom - r.Top) >= 480)
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Detects whether Windows "Show Desktop" (bottom-right taskbar button or Win+D) is currently active.
+        /// When Show Desktop is clicked, Windows raises WorkerW/Progman (the Desktop host) above HWND_BOTTOM
+        /// (above bottomProbeHwnd) and/or minimizes all normal application windows.
+        /// </summary>
+        public static bool IsShowDesktopStateActive(IntPtr bottomProbeHwnd, uint drawerPid)
+        {
+            IntPtr hDesktopHost;
+            IntPtr hDefView;
+            FindDesktopHandles(out hDesktopHost, out hDefView);
+
+            if (bottomProbeHwnd != IntPtr.Zero && IsWindow(bottomProbeHwnd))
+            {
+                SetWindowPos(
+                    bottomProbeHwnd,
+                    HWND_BOTTOM,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
+
+                bool desktopAboveProbe = false;
+                bool normalAppAboveRaisedDesktop = false;
+
+                IntPtr cur = GetWindow(bottomProbeHwnd, GW_HWNDPREV);
+                int steps = 0;
+                while (cur != IntPtr.Zero && steps < 600)
+                {
+                    if (IsDesktopShellWindow(cur, hDesktopHost, hDefView))
+                    {
+                        desktopAboveProbe = true;
+                        normalAppAboveRaisedDesktop = false;
+                    }
+                    else if (desktopAboveProbe && IsRealVisibleNormalWindow(cur, drawerPid, hDesktopHost, hDefView))
+                    {
+                        normalAppAboveRaisedDesktop = true;
+                    }
+                    cur = GetWindow(cur, GW_HWNDPREV);
+                    steps++;
+                }
+
+                if (desktopAboveProbe && !normalAppAboveRaisedDesktop)
+                {
+                    return true;
+                }
+            }
+
+            // Also check if zero visible unminimized normal application windows exist above the Desktop
+            int visibleNormalApps = 0;
+            IntPtr topCur = GetTopWindow(IntPtr.Zero);
+            int topSteps = 0;
+            while (topCur != IntPtr.Zero && topSteps < 600)
+            {
+                if (IsDesktopShellWindow(topCur, hDesktopHost, hDefView))
+                {
+                    break;
+                }
+                if (IsRealVisibleNormalWindow(topCur, drawerPid, hDesktopHost, hDefView))
+                {
+                    visibleNormalApps++;
+                    break;
+                }
+                topCur = GetWindow(topCur, GW_HWNDNEXT);
+                topSteps++;
+            }
+
+            return visibleNormalApps == 0;
+        }
+
+        /// <summary>
+        /// Verifies in real Win32 Z-order whether hwndUpper appears above hwndLower.
+        /// </summary>
+        public static bool IsWindowAboveInZOrder(IntPtr hwndUpper, IntPtr hwndLower)
+        {
+            if (hwndUpper == IntPtr.Zero || hwndLower == IntPtr.Zero || hwndUpper == hwndLower)
+                return false;
+
+            IntPtr cur = GetWindow(hwndUpper, GW_HWNDNEXT);
+            int steps = 0;
+            while (cur != IntPtr.Zero && steps < 800)
+            {
+                if (cur == hwndLower) return true;
+                cur = GetWindow(cur, GW_HWNDNEXT);
+                steps++;
+            }
+            return false;
         }
 
         public static void ApplyPodLayering(IntPtr hwnd, bool stayTopmost)

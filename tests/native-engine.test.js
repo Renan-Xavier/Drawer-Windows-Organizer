@@ -50,4 +50,6 @@ test('Native C#/WPF Drawer.exe passes --smoke-test creating independent frameles
   assert.equal(report.isFullScreenOverlay, false, 'Native WPF Pod must NOT be a fullscreen overlay');
   assert.equal(report.desktopLayerBottomLocked, true, 'Desktop Pods must lock to HWND_BOTTOM and return MA_NOACTIVATE so they never overlay Windows apps');
   assert.equal(report.usesWin32TrackPopupMenu, true, 'Pod context menu must use Win32 TrackPopupMenuEx so clicking outside always closes the menu');
+  assert.equal(report.excludedFromShowDesktopPeek, true, 'Pods must set DWMWA_EXCLUDED_FROM_PEEK and survive Show Desktop button without disappearing');
+  assert.equal(report.activePodAboveOtherPods, true, 'Active/open or context-menu Pod must always sit above other Drawer Pods in Z-order');
 });
