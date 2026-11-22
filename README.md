@@ -64,9 +64,9 @@ Diferente de sobreposições de tela cheia tradicionais, cada gaveta no **Drawer
   <img src="assets/demo-desktop-pods.gif" alt="Demonstração Drawer 2.0 — Pods Nativos na Área de Trabalho com Hover, Pin, Drag & Drop bidirecional e autoajuste geométrico" width="100%" />
 </p>
 
-### 2. Encaixe Magnético nas Bordas (*Edge-Docked Tabs*), Modo Transparente / Glass & *Peek Mode* (`Ctrl + Shift + D`)
+### 2. Encaixe Magnético nas Bordas (*Edge-Docked Tabs*) & Modo Transparente / Glass
 <p align="center">
-  <img src="assets/demo-edge-dock-glass.gif" alt="Demonstração Drawer 2.0 — Encaixe Magnético na Borda Esquerda, abertura sobre janelas maximizadas, Modo Glass e Peek Mode Ctrl+Shift+D" width="100%" />
+  <img src="assets/demo-edge-dock-glass.gif" alt="Demonstração Drawer 2.0 — Encaixe Magnético na Borda Esquerda e Modo Transparente Glass na Área de Trabalho" width="100%" />
 </p>
 
 ### 3. Configurações do Sistema & Catálogo Rápido de Aplicativos (Busca e Adição em 1 Clique)
