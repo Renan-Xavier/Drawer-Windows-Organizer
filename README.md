@@ -57,6 +57,25 @@ Diferente de sobreposições de tela cheia tradicionais, cada gaveta no **Drawer
 
 ---
 
+## 📸 Capturas de Tela (Drawer 2.0 em Ação)
+
+### 1. Pods Nativos na Área de Trabalho (Gavetas Fechadas e Abertas — Estilo Azul Discord)
+<p align="center">
+  <img src="assets/screenshot-desktop-pods.png" alt="Drawer 2.0 — Pods Nativos na Área de Trabalho com gavetas Jogos e IDEs abertas" width="100%" />
+</p>
+
+### 2. Encaixe Magnético nas Bordas (*Edge-Docked Tabs*) & Modo Transparente / Glass
+<p align="center">
+  <img src="assets/screenshot-edge-dock-glass.png" alt="Drawer 2.0 — Abas Magnéticas na Borda Esquerda e Modo Transparente Glass" width="100%" />
+</p>
+
+### 3. Configurações do Sistema & Catálogo Rápido de Aplicativos
+<p align="center">
+  <img src="assets/screenshot-settings-catalog.png" alt="Drawer 2.0 — Janela de Configurações e Catálogo Rápido" width="85%" />
+</p>
+
+---
+
 ## ✨ Principais Inovações da Versão 2.0
 
 * **Pods Nativos Independentes (Zero Sobreposição de Tela Cheia):** Cada gaveta ocupa apenas seus próprios pixels na tela — sem janela invisível cobrindo o monitor, sem barra superior fantasma e sem loops de *hit-test*.
