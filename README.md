@@ -57,21 +57,21 @@ Diferente de sobreposições de tela cheia tradicionais, cada gaveta no **Drawer
 
 ---
 
-## 📸 Capturas de Tela (Drawer 2.0 em Ação)
+## 🎬 Demonstração em Ação (Drawer 2.0)
 
-### 1. Pods Nativos na Área de Trabalho (Gavetas Fechadas e Abertas — Estilo Azul Discord)
+### 1. Pods Nativos na Área de Trabalho (Hover, Fixar/Pin, Drag & Drop e Autoajuste Geométrico)
 <p align="center">
-  <img src="assets/screenshot-desktop-pods.png" alt="Drawer 2.0 — Pods Nativos na Área de Trabalho com gavetas Jogos e IDEs abertas" width="100%" />
+  <img src="assets/demo-desktop-pods.gif" alt="Demonstração Drawer 2.0 — Pods Nativos na Área de Trabalho com Hover, Pin, Drag & Drop bidirecional e autoajuste geométrico" width="100%" />
 </p>
 
-### 2. Encaixe Magnético nas Bordas (*Edge-Docked Tabs*) & Modo Transparente / Glass
+### 2. Encaixe Magnético nas Bordas (*Edge-Docked Tabs*), Modo Transparente / Glass & *Peek Mode* (`Ctrl + Shift + D`)
 <p align="center">
-  <img src="assets/screenshot-edge-dock-glass.png" alt="Drawer 2.0 — Abas Magnéticas na Borda Esquerda e Modo Transparente Glass" width="100%" />
+  <img src="assets/demo-edge-dock-glass.gif" alt="Demonstração Drawer 2.0 — Encaixe Magnético na Borda Esquerda, abertura sobre janelas maximizadas, Modo Glass e Peek Mode Ctrl+Shift+D" width="100%" />
 </p>
 
-### 3. Configurações do Sistema & Catálogo Rápido de Aplicativos
+### 3. Configurações do Sistema & Catálogo Rápido de Aplicativos (Busca e Adição em 1 Clique)
 <p align="center">
-  <img src="assets/screenshot-settings-catalog.png" alt="Drawer 2.0 — Janela de Configurações e Catálogo Rápido" width="85%" />
+  <img src="assets/demo-settings-catalog.gif" alt="Demonstração Drawer 2.0 — Janela de Configurações, busca em tempo real no Catálogo Rápido, troca de estilo visual e acoplamento magnético" width="85%" />
 </p>
 
 ---
